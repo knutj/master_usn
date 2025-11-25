@@ -15,4 +15,5 @@
 | `cnn_lstm_diagnosev_rdap_v3.py` | CNN-LSTM model for diagnosis prediction. |
 | `lsm_diagnosev_rdap_v3.py`   | LSTM model for diagnosis prediction. |
 | `cnn_lstm_v4_TSDv5.py`       | CNN-LSTM model for predicting readmission. |
-
+| lstm_v4_TSDv2.py             |  LSTM model for predicting readmission. |
+| sklean_logistic.py           |  Logistic regression from sklearn for predicting readmission. |
