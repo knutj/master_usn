@@ -3,7 +3,7 @@
 
 | File                          | Description |
 |-------------------------------|-------------|
-| `helper.py`                  | Defines the `trainer()` used in CNN-LSTM and LSTM training. |
+| `helper.py`                  | Defines the `trainer()` and 'evalute()' used in CNN-LSTM and LSTM training. |
 | `oversample.py`              | SMOTE for time series using Euclidean distance. |
 | `importcsv_version1.py`      | Loads and merges RDAP Excel files. |
 | `clean_data3.py`             | Cleans data, adds readmission column, maps DICO → ICD-10, calculates stay duration. |
