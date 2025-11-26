@@ -29,6 +29,7 @@ from sklearn.metrics import f1_score, roc_auc_score
 from tsaug import TimeWarp, Drift, Reverse, Quantize, AddNoise
 # %%
 import random
+from model import *
 from data_import import *
 from dataclass import *
 from prosess_data import *
