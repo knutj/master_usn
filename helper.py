@@ -1,30 +1,16 @@
 import os 
-from optuna.logging import set_verbosity, WARNING
-import dask.dataframe as dd
-os.system('cls' if os.name == 'nt' else 'clear')
-import json
-import joblib
-import pandas as pd
 import numpy as np
 import torch
 import torch.nn as nn
 
 import torch.nn.functional as F
-import optuna
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import roc_auc_score, f1_score
-from sklearn.preprocessing import OrdinalEncoder, label_binarize
 from torch.utils.data import Dataset, DataLoader
-from imblearn.over_sampling import SMOTE
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
-from typing import List, Tuple
 from torch.amp import autocast, GradScaler
 import matplotlib.pyplot as plt
 from tqdm.auto import tqdm
-from optuna.logging import set_verbosity, CRITICAL
 import sys
-from sklearn.metrics import f1_score, roc_auc_score
-from tsaug import TimeWarp, Drift, Reverse, Quantize, AddNoise
+
 
 def train(model, dataloader, optimizer, criterion, device, epochs, num_class):
     castauto = False
