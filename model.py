@@ -121,31 +121,6 @@ class LSTMStack_s(nn.Module):
 
 
 
-class LSTMStack_n(nn.Module):
-    def __init__(self, input_size, hidden_size, num_layers,dropout_prob,num_classes=2):
-        super(LSTMStack_n, self).__init__()
-
-        self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size,
-                            num_layers=num_layers, batch_first=True)
-        
-        self.layernorm = nn.LayerNorm(hidden_size)
-        self.dropout = nn.Dropout(dropout_prob)
-        self.classifier = nn.Linear(hidden_size, num_classes)
-
-
-    def forward(self, x,lengths):
-        packed = pack_padded_sequence(x, lengths, batch_first=True, enforce_sorted=False)
-        output, (hn, cn) = self.lstm(packed)
-        last_hidden = hn[-1]  # (batch_size, hidden_size)  <-- 2D
-        normed = self.layernorm(last_hidden)
-        dropped = self.dropout(normed)
-        out = self.classifier(dropped)  # shape: (batch_size, num_classes)
-
-        return out
-    
-
-
-
 class FocalLoss(nn.Module):
     def __init__(self, alpha=None, gamma=2.0, reduction='mean'):
         
