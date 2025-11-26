@@ -6,7 +6,7 @@
 | `helper.py`                  | Defines the `trainer()` and 'evalute()' used in CNN-LSTM and LSTM training. |
 | `oversample.py`              | SMOTE for time series using Euclidean distance. |
 | `importcsv_version1.py`      | Loads and merges RDAP Excel files. |
-| `clean_data3.py`             | Cleans data, adds readmission column, maps DICO → ICD-10, calculates stay duration. |
+| `clean_data3.py`             | Cleans data, adds readmission column, maps daignosis → ICD-10, calculates stay duration. |
 | `model.py`                   | Contains CNN-LSTM and LSTM architectures in PyTorch. |
 | `prepare_diagnosis.py`       | Prepares data for XGBoost to predict ICD-10 chapters. |
 | `process_data.py`            | Transforms and pads time series data; includes classification reporting. |
@@ -17,3 +17,5 @@
 | `cnn_lstm_v4_TSDv5.py`       | CNN-LSTM model for predicting readmission. |
 | lstm_v4_TSDv2.py             |  LSTM model for predicting readmission. |
 | sklean_logistic.py           |  Logistic regression from sklearn for predicting readmission. |
+| dataclass.py                 |   Data class that is used to define the data class |
+| data_import.py               |  Set up import of data and set treshold for icd10 labels |
