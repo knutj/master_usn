@@ -54,13 +54,17 @@ def split_bidiagnosis(text):
         list = text.split(" ")
         code = list[0]
         return(code)
-    
+
+
+
+
+
 df['bidiagnosiscode'] = df['Bidiagnose'].apply(split_bidiagnosis)
 
 
 
-non_empty = df[df['bidiagnosiscode'].notna() & (df['bidiagnosiscode'].str.strip() != "")  & (df['bidiagnosiscode'].str.strip() != "-")]
-print(non_empty['bidiagnosiscode'])
+#non_empty = df[df['bidiagnosiscode'].notna() & (df['bidiagnosiscode'].str.strip() != "")  & (df['bidiagnosiscode'].str.strip() != "-")]
+#print(non_empty['bidiagnosiscode'])
 
 def get_icd10_group_number(icd10_code):
     """
@@ -267,6 +271,31 @@ df['episode_start_datetime'] =pd.to_datetime(df['EPISODESTARTTID'],format='%Y-%m
                                              #,format='%Y-%m-%d %H:%M.%S', errors='coerce')
 df['episode_end_datetime'] =pd.to_datetime(df['EPISODESLUTTTID'],format='%Y-%m-%d %H:%M:%S', errors='coerce')
 
+def is_icd10_code(token):
+    """
+    Check if token looks like an ICD-10 code: e.g., A00, B20.1, C50.91
+    """
+    return bool(re.match(r'^[A-Z][0-9]{2}(\.[0-9A-Z]{1,4})?$', token.upper()))
+
+
+def secondary_all_diagnsosis(text):
+    diagnosis = set() 
+    listtxt = text.split(" ")
+    #print(listtxt)
+    for i in listtxt:
+        if len(i) > 5:
+            continue
+        group = get_icd10_group_name(i)
+        clean_group = group.strip().title()  # Normalize format
+        if len(clean_group) >5:
+            diagnosis.add(clean_group)        
+    out = ",".join(diagnosis)
+    #print(out)
+    return out
+df['bidiagnosiscode']=df['Bidiagnose'].apply(secondary_all_diagnsosis)
+
+
+
 
 print(df[['id', 'episode_start_datetime', 'episode_end_datetime']])
 print("before remove and merge of dupliacte rows.")
@@ -279,7 +308,7 @@ df = (
     })
 )
 
-
+print(df['bidiagnosiscode'])
 print(type(df))
 print("test2")
 
@@ -288,8 +317,13 @@ print(df.columns)
 for col in ['Omsorg', 'Avdeling', 'Hastegrad', 'Sex','age_cat']:
     df[col] = df[col].astype('category')
 
-df['bidiagnosiscode']=df['bidiagnosiscode'].apply(get_icd10_group_name)
+
+
 #df['icd10_from_main']=df['HovedDiagnose'].apply(get_icd10_group_name)
+
+
+
+
 
 df['ICD10_code_diagnosis']=df['HovedDiagnosekode'].apply(get_icd10_group_name)
 df['ICD10_code_diagnosis_group']=df['HovedDiagnosekode'].apply(get_icd10_group_number)
@@ -373,7 +407,7 @@ y_df = y_df.rename(columns={'readmission': 'label'})
 x_df =df_sorted.drop(['readmission'],axis=1)
 x_df =x_df.drop(["HovedDiagnosekode"],axis=1)
 x_df =x_df.drop(["HovedDiagnose"],axis=1)
-x_df =x_df.drop(["visits"],axis=1)
+#x_df =x_df.drop(["visits"],axis=1)
 
 
 x_df = x_df.drop(columns=['episode_start_datetime','episode_end_datetime','YearEpisode','Lokasjon','ICD10_code_diagnosis_group','prev_treatment_time','treatment_time'])

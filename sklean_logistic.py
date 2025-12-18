@@ -233,14 +233,14 @@ def objective(trial):
     iter=trial.suggest_int('max_iter',50,150)
 
     model = LogisticRegression(max_iter=iter)
-    auc = cross_val_score(model, X_train, y_train, scoring='roc_auc', cv=5, n_jobs=-1).mean()
+    auc = cross_val_score(model, X_train, y_train, scoring='roc_auc', cv=5, n_jobs=1).mean()
 
     return auc
 
 
 # Create study and optimize
 study = optuna.create_study(direction='maximize')
-study.optimize(objective, n_trials=20)
+study.optimize(objective, n_trials=20,n_jobs=10)
 
 # Best parameters and best score
 print("Best params:", study.best_params)
@@ -356,8 +356,8 @@ report_df = pd.DataFrame(reports_dict).transpose()
 report_df.to_csv(os.path.join(data_path,"classification_report_rand.csv"))
 
 
-for col, cats in zip(categorical_cols, encoder.categories_):
-    print(f"Column: {col}")
-    for i, cat in enumerate(cats):
-        print(f"  {i} → {cat}")
-    print()
+#for col, cats in zip(categorical_cols, encoder.categories_):
+ #   print(f"Column: {col}")
+  #  for i, cat in enumerate(cats):
+   #     print(f"  {i} → {cat}")
+   # print()

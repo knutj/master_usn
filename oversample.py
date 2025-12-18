@@ -1,9 +1,34 @@
 import os
-import random
-from tsaug import AddNoise, Drift, TimeWarp,Drift, Reverse, Quantize, AddNoise
-from collections import Counter
+
+from optuna.logging import set_verbosity, WARNING
+import dask.dataframe as dd
+#os.system('cls' if os.name == 'nt' else 'clear')
+import json
+import joblib
+import pandas as pd
 import numpy as np
 import torch
+import torch.nn as nn
+
+import torch.nn.functional as F
+import optuna
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import roc_auc_score, f1_score
+from sklearn.preprocessing import OrdinalEncoder, label_binarize
+from torch.utils.data import Dataset, DataLoader
+from imblearn.over_sampling import SMOTE
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+from typing import List, Tuple
+from torch.amp import autocast, GradScaler
+import matplotlib.pyplot as plt
+from tqdm.auto import tqdm
+from optuna.logging import set_verbosity, CRITICAL
+import sys
+from sklearn.metrics import f1_score, roc_auc_score
+from tsaug import TimeWarp, Drift, Reverse, Quantize, AddNoise
+# %%
+import random
+
 
 def oversample_sequences_multiclass(X, y, lengths, target_class_size=None, shuffle=True, random_state=None):
     """
@@ -128,7 +153,8 @@ def oversample_sequences_multiclass_tsaug(
 
     return X_aug, y_aug, lengths_aug
 
-
+import numpy as np
+from collections import Counter
 
 try:
     from tslearn.metrics import cdist_dtw
@@ -161,7 +187,7 @@ def euclidean_gpu(X):
 
 
 
-def smote_ts_dtw(X, y, target_class, k=5, n_new=100, use_dtw=False,max_samples=1000):
+def smote_ts_dtw(X, y, target_class, k=5, n_new=100, use_dtw=False,max_samples=20000):
     """
     Generate synthetic time series samples for a given class using DTW or Euclidean-based interpolation.
     """
@@ -214,7 +240,7 @@ def smote_ts_dtw(X, y, target_class, k=5, n_new=100, use_dtw=False,max_samples=1
     return np.array(X_new), np.array(y_new)
 
 
-def oversample_sequences_smotets(X, y, lengths, target_ratio=0.1, k=5):
+def oversample_sequences_smotets(X, y, lengths, target_ratio=0.5, k=5):
     """
     Oversample minority classes in a multiclass setting using SMOTE-TS (DTW or Euclidean).
     """
@@ -223,6 +249,7 @@ def oversample_sequences_smotets(X, y, lengths, target_ratio=0.1, k=5):
         f"Input length mismatch: X={len(X)}, y={len(y)}, lengths={len(lengths)}"
 
     class_counts = Counter(y)
+    #print(f"class_counts {class_counts}" )
     max_class_size = max(class_counts.values())
 
     X_aug, y_aug, lengths_aug = [X], [y], [lengths]

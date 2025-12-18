@@ -75,8 +75,8 @@ if not os.path.exists(data_path):
 
 # %%
 # --- Step 1: Load the Data ---
-df = pd.read_csv("data/cleaned_data.csv.gz",nrows=100000)
-#df = pd.read_csv("data/cleaned_data.csv.gz")
+#df = pd.read_csv("data/cleaned_data.csv.gz",nrows=100000)
+df = pd.read_csv("data/cleaned_data.csv.gz")
 print(df.columns)
 
 df,tranlate_dic=startimportdata(df,figure_path,model_path,data_path,"lstm")
@@ -171,7 +171,7 @@ y_test_ = pd.DataFrame({
 
 
 # %%
-sequence_length = 3
+sequence_length = 8
 (X_test, y_test, lengths_test, group_test) = prepare_data(X_test_, y_test_, sequence_length)
 print(X_test.shape)
 test_data = ReadmissionDataset(X_test, y_test, lengths_test)

@@ -1,12 +1,36 @@
-import os
-import numpy as np
-import pandas as pd
-from sklearn.preprocessing import LabelEncoder, OrdinalEncoder
+﻿import os
 
+from optuna.logging import set_verbosity, WARNING
+import dask.dataframe as dd
+#os.system('cls' if os.name == 'nt' else 'clear')
+import json
+import joblib
+import pandas as pd
+import numpy as np
+import torch
+import torch.nn as nn
+
+import torch.nn.functional as F
+import optuna
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import roc_auc_score, f1_score
+from sklearn.preprocessing import OrdinalEncoder, label_binarize
+from torch.utils.data import Dataset, DataLoader
+from imblearn.over_sampling import SMOTE
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+from typing import List, Tuple
+from torch.amp import autocast, GradScaler
+import matplotlib.pyplot as plt
+from tqdm.auto import tqdm
+from optuna.logging import set_verbosity, CRITICAL
+import sys
+from sklearn.metrics import f1_score, roc_auc_score
+from tsaug import TimeWarp, Drift, Reverse, Quantize, AddNoise
 # %%
 
 
-def startimportdata(df,figure_path,model_path,data_path,name):
+def startimportdata(df,figure_path,model_path,data_path,name,thershold_count=55000):
+    #thershold_count=30000
     print(df.columns)
 
     df = df.dropna()
@@ -65,10 +89,10 @@ def startimportdata(df,figure_path,model_path,data_path,name):
     # Create subject-level labels for stratification
 
     counts = df['nlabel'].value_counts()
-    mask = counts[counts >= 3000].index
+    mask = counts[counts >= thershold_count].index
     df = df[df['nlabel'].isin(mask)]
 
-   
+    from sklearn.preprocessing import LabelEncoder
 
     le = LabelEncoder()
     df["label"] = le.fit_transform(df["nlabel"])
@@ -108,11 +132,12 @@ def startimportdata(df,figure_path,model_path,data_path,name):
 
     plt.tight_layout()  # Adjusts layout to avoid clipping
     plt.savefig(os.path.join(figure_path,f"{name}_x_df_diag_label.png"), bbox_inches="tight", pad_inches=0.2)
+    plt.show()
     plt.close()
    
     # %%
 
-
+    print(counts)
 
 
 

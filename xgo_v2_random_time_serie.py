@@ -20,8 +20,13 @@ from sklearn.model_selection import cross_val_score
 from sklearn.model_selection import train_test_split
 
 # Read preprocessed dataframes produced in notebook 2_preprocessing.ipynb
-X = pd.read_parquet('data/x_df.parque')
-y = pd.read_parquet('data/y_df.parque')
+#X = pd.read_parquet('data/x_df.parque')
+#y = pd.read_parquet('data/y_df.parque')
+
+df = pd.read_csv("data/cleaned_data.csv.gz")
+
+
+
 
 # Define the class weight scale (a hyperparameter) as the ration of negative labels to positive labels.
 # This instructs the classifier to address the class imbalance.
@@ -49,7 +54,7 @@ if "Bidiagnose" in X.columns:
 
 
 print(X.columns)
-#X = X.drop(columns=['id'])
+X = X.drop(columns=['id'])
     
 #if "Kommune" in X.columns:
  #   X = X.drop(columns=['Kommune'])
@@ -288,13 +293,13 @@ def objective(trial):
     }
 
     model = xgb.XGBClassifier(**params)
-    auc = cross_val_score(model, X_train, y_train, scoring='roc_auc', cv=5, n_jobs=1).mean()
+    auc = cross_val_score(model, X_train, y_train, scoring='roc_auc', cv=5, n_jobs=-1).mean()
 
     return auc
 
 # Create study and optimize
 study = optuna.create_study(direction='maximize')
-study.optimize(objective, n_trials=100,n_jobs=10)
+study.optimize(objective, n_trials=100)
 
 # Best parameters and best score
 print("Best params:", study.best_params)
@@ -307,6 +312,80 @@ xgb_opt.fit(X_train, y_train)
 
 
 
+if op:
+
+    param_test0 = {
+     'n_estimators':range(50,250,10)
+    }
+    print('performing hyperparamter optimization step 0')
+    gsearch0 = GridSearchCV(estimator = xgb1, param_grid = param_test0, scoring='roc_auc',n_jobs=2, cv=5)
+    gsearch0.fit(X_train,y_train)
+    print(gsearch0.best_params_, gsearch0.best_score_)
+
+    param_test1 = {
+     'max_depth':range(1,4),
+     'min_child_weight':range(1,10)
+    }
+    print('performing hyperparamter optimization step 1')
+    gsearch1 = GridSearchCV(estimator = gsearch0.best_estimator_,
+     param_grid = param_test1, scoring='roc_auc',n_jobs=2, cv=5)
+    gsearch1.fit(X_train,y_train)
+    print(gsearch1.best_params_, gsearch1.best_score_)
+
+    max_d = gsearch1.best_params_['max_depth']
+    min_c = gsearch1.best_params_['min_child_weight']
+
+    param_test2 = {
+     'gamma':[i/10. for i in range(0,5)]
+    }
+    print('performing hyperparamter optimization step 2')
+    gsearch2 = GridSearchCV(estimator = gsearch1.best_estimator_,
+     param_grid = param_test2, scoring='roc_auc',n_jobs=2, cv=5)
+    gsearch2.fit(X_train,y_train)
+    print(gsearch2.best_params_, gsearch2.best_score_)
+
+    param_test3 = {
+        'subsample':[i/10.0 for i in range(1,10)],
+        'colsample_bytree':[i/10.0 for i in range(1,10)]
+    }
+    print('performing hyperparamter optimization step 3')
+    gsearch3 = GridSearchCV(estimator = gsearch2.best_estimator_,
+     param_grid = param_test3, scoring='roc_auc',n_jobs=4, cv=5)
+    gsearch3.fit(X_train,y_train)
+    print(gsearch3.best_params_, gsearch3.best_score_)
+
+    param_test4 = {
+        'reg_alpha':[0, 1e-5, 1e-3, 0.1, 10]
+    }
+    print('performing hyperparamter optimization step 4')
+    gsearch4 = GridSearchCV(estimator = gsearch3.best_estimator_,
+     param_grid = param_test4, scoring='roc_auc',n_jobs=4, cv=5)
+    gsearch4.fit(X_train,y_train)
+    print(gsearch4.best_params_, gsearch4.best_score_)
+
+    alpha = gsearch4.best_params_['reg_alpha']
+    if alpha != 0:
+        param_test4b = {
+            'reg_alpha':[0.1*alpha, 0.25*alpha, 0.5*alpha, alpha, 2.5*alpha, 5*alpha, 10*alpha]
+        }
+        print('performing hyperparamter optimization step 4b')
+        gsearch4b = GridSearchCV(estimator = gsearch4.best_estimator_,
+         param_grid = param_test4b, scoring='roc_auc',n_jobs=2, cv=5)
+        gsearch4b.fit(X_train,y_train)
+        print(gsearch4b.best_params_, gsearch4.best_score_)
+        print('\nParameter optimization finished!')
+        xgb_opt = gsearch4b.best_estimator_
+        xgb_opt
+    else:
+        xgb_opt = gsearch4.best_estimator_
+        xgb_opt
+#else:
+    # Pre-optimized settings
+#    xgb_opt = XGBClassifier(base_score=0.5, colsample_bylevel=1.0, colsample_bytree=0.8,
+#       gamma=0.1, learning_rate=0.1, max_delta_step=0, max_depth=7,
+#       min_child_weight=9, n_estimators=220, nthread=4,subsample=0.9,
+#       objective='binary:logistic', reg_alpha=5.0, reg_lambda=1,
+#       scale_pos_weight=class_weight_scale, seed=1, enable_categorical = True)
 
 print(xgb_opt)
 
@@ -363,7 +442,26 @@ plt.legend(loc="lower right")
 fig.savefig(os.path.join(figure_path,'ROC_near.png'))
 plt.show()
 
+if op:
 
+    aucs = [np.mean(roc_aucs_xgb1),
+            gsearch0.best_score_,
+            gsearch1.best_score_,
+            gsearch2.best_score_,
+            gsearch3.best_score_,
+            gsearch4.best_score_,
+            np.mean(roc_aucs_xgbopt)]
+
+    fig = plt.figure(figsize=(4,4))
+    plt.scatter(np.arange(1,len(aucs)+1), aucs)
+    plt.plot(np.arange(1,len(aucs)+1), aucs)
+    plt.xlim([0.5, len(aucs)+0.5])
+    plt.ylim([0.99*aucs[0], 1.01*aucs[-1]])
+    plt.xlabel('Hyperparamter optimization step')
+    plt.ylabel('AUC')
+    plt.title('Hyperparameter optimization')
+    plt.grid()
+    fig.savefig(os.path.join(figure_path,'optimization_rand.png'))
 
 def my_plot_importance(booster, figsize, **kwargs):
     from matplotlib import pyplot as plt

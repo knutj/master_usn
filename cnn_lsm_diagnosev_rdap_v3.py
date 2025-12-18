@@ -3,7 +3,7 @@ import os
 
 from optuna.logging import set_verbosity, WARNING
 import dask.dataframe as dd
-os.system('cls' if os.name == 'nt' else 'clear')
+#os.system('cls' if os.name == 'nt' else 'clear')
 import json
 import joblib
 import pandas as pd
@@ -29,7 +29,7 @@ from sklearn.metrics import f1_score, roc_auc_score
 from tsaug import TimeWarp, Drift, Reverse, Quantize, AddNoise
 # %%
 import random
-from model import *
+from model import * 
 from data_import import *
 from dataclass import *
 from prosess_data import *
@@ -64,7 +64,7 @@ if not os.path.exists(data_path):
 
 # %%
 # --- Step 1: Load the Data ---
-df = pd.read_csv("data/cleaned_data.csv.gz",nrows=100000)
+df = pd.read_csv("data/cleaned_data.csv.gz")
 
 
 
@@ -99,7 +99,7 @@ y_test_ = df.loc[test_mask, ['label']].reset_index(drop=True)
 
 
 #%%
-sequence_length = 3
+sequence_length = 10
 (X_test, y_test, lengths_test, group_test) = prepare_data(X_test_, y_test_, sequence_length)
 print(X_test.shape)
 test_data = ReadmissionDataset(X_test, y_test, lengths_test)
@@ -114,7 +114,7 @@ num_features = X_test.shape[2]
 
 # %%
 print(y_test)
-
+print(num_features)
 # %%
 
 
@@ -185,7 +185,7 @@ def objective(trial):
     aucs = []
     best_trial_auc = -np.inf
     best_model_file = None
-
+    print("enter fold")
     for fold, (train_index, val_index) in enumerate(skf.split(X_train_all, y_train_all, groups=group_train)):
         print(f"\n📦 Fold {fold + 1}/{n_splits}")
         print(" oversample  Sample:")
@@ -209,8 +209,10 @@ def objective(trial):
         for cls, count in counts.items():
             print(f"  Class {cls}: {count} samples")
         # ---- Oversample ----
-        X_train, y_train, len_train = oversample_sequences_smotets(X_train, y_train, len_train)
-
+        try:
+            X_train, y_train, len_train = oversample_sequences_smotets(X_train, y_train, len_train)
+        except:
+            print("oversampling failed")
         new_counts = Counter(y_train)
 
         print(" oversample  Sample:")
@@ -343,11 +345,11 @@ def is_jupyter_notebook():
 if is_jupyter_notebook():
     n_job=1
 else:
-    n_job=16
+    n_job=8
 
 study.optimize(
             objective,
-            n_trials=16,
+            n_trials=20,
             n_jobs=n_job,
             show_progress_bar=True  # disable tqdm if not a real terminal
 )
@@ -785,11 +787,20 @@ sorted_labels = [tranlate_dic[i] for i in sorted(tranlate_dic)]
 
 # ✅ Step 6: Display confusion matrix
 disp = ConfusionMatrixDisplay(confusion_matrix=cm,display_labels=sorted_labels)
-disp.plot(cmap="Blues", values_format="0.2f")
-plt.title("Confusion Matrix (multi-class)")
-plt.xlabel("Predicted Label evalutaion")
-plt.xticks(rotation=45, ha='right')
-plt.savefig(os.path.join(figure_path,"confusion_matrix_eval.png"))
+fig, ax = plt.subplots(figsize=(12, 10))  # ✅ Bigger figure for readability
+disp.plot(cmap="Blues", values_format=".2f", ax=ax, xticks_rotation=45)  # ✅ Control rotation directly
+
+# Customize title and labels
+ax.set_title("Confusion Matrix (multi-class)", fontsize=16)
+ax.set_xlabel("Predicted Label (Evaluation)", fontsize=12)
+ax.set_ylabel("True Label", fontsize=12)
+
+# Optionally adjust tick label sizes
+ax.tick_params(axis='x', labelsize=10)
+ax.tick_params(axis='y', labelsize=10)
+
+plt.tight_layout()  # ✅ Prevent label overlap
+plt.savefig(os.path.join(figure_path, "confusion_matrix_eval.png"))
 plt.close()
 
 # %%
