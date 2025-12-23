@@ -14,7 +14,7 @@
 | `xgo_v2_random.py`           | XGBoost + random undersampling for readmission prediction. |
 | `cnn_lstm_diagnosev_rdap_v3.py` | CNN-LSTM model for diagnosis prediction. |
 | `lsm_diagnosev_rdap_v3.py`   | LSTM model for diagnosis prediction. |
-| `cnn_lstm_v4_TSDv5.py`       | CNN-LSTM model for predicting readmission. |
+| `cnn_lstm_v4_TSDv6.py`       | CNN-LSTM model for predicting readmission. |
 | lstm_v4_TSDv2.py             |  LSTM model for predicting readmission. |
 | sklean_logistic.py           |  Logistic regression from sklearn for predicting readmission. |
 | dataclass.py                 |   Data class that is used to define the data class |
