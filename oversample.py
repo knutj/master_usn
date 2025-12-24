@@ -388,3 +388,101 @@ def oversample_sequences_multiclass_tsmote_faiss(
         X_bal, y_bal, lengths_bal = X_bal[idx], y_bal[idx], lengths_bal[idx]
 
     return X_bal, y_bal, lengths_bal
+    
+    
+    
+import torch
+from sklearn.neighbors import NearestNeighbors
+from collections import Counter
+
+def oversample_sequences_multiclass_tsmote_gpu(
+    X, y, lengths,
+    target_class_size=None,
+    k_neighbors=5,
+    shuffle=True,
+    random_state=None,
+    device=None,max_samples=10000
+):
+    """
+    GPU-accelerated Temporal-oriented SMOTE (T-SMOTE).
+    Uses PyTorch tensors for fast interpolation and temporal noise.
+    """
+    
+    
+    
+    
+    if random_state is not None:
+        np.random.seed(random_state)
+        torch.manual_seed(random_state)
+
+    device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    class_counts = Counter(y)
+    classes = np.unique(y)
+    if target_class_size is None:
+        target_class_size = max(class_counts.values())
+
+    X_list, y_list, lengths_list = [X], [y], [lengths]
+
+    for cls in classes:
+        X_cls = X[y == cls]
+        if len(X) > max_samples:
+            print(f"⚠ Downsampling class {target_class} from {len(X_class)} to {max_samples} for TS-SMOTE")
+       	    keep_idx = np.random.choice(len(X_cls), max_samples, replace=False)
+            X_cls = X_class[keep_idx]
+    	else:
+            print(f"📏 Using {len(X_class)} samples for SMOTE class {target_class}")
+        
+        
+        n_samples, seq_len, n_features = X_cls.shape
+        count = n_samples
+
+        if count < target_class_size:
+            n_to_sample = target_class_size - count
+
+            # Neighbor search on CPU (scikit-learn)
+            X_flat = X_cls.reshape(n_samples, -1)
+            nn = NearestNeighbors(n_neighbors=min(k_neighbors, n_samples))
+            nn.fit(X_flat)
+
+            synthetic_samples = []
+            for _ in range(n_to_sample):
+                i = np.random.randint(0, n_samples)
+                x_i = X_cls[i]
+                _, indices = nn.kneighbors(X_flat[i].reshape(1, -1))
+                j = np.random.choice(indices[0][1:])  # avoid self
+                x_j = X_cls[j]
+
+                # Move to GPU tensors
+                x_i_t = torch.tensor(x_i, dtype=torch.float32, device=device)
+                x_j_t = torch.tensor(x_j, dtype=torch.float32, device=device)
+
+                # Interpolation and noise on GPU
+                alpha = torch.rand(1, device=device)
+                x_syn = alpha * x_i_t + (1 - alpha) * x_j_t
+                temporal_noise = torch.randn_like(x_syn) * 0.01
+                x_syn = x_syn + temporal_noise
+
+                synthetic_samples.append(x_syn.cpu().numpy())
+
+            synthetic_samples = np.array(synthetic_samples)
+            synthetic_labels = np.full(len(synthetic_samples), cls)
+            synthetic_lengths = np.full(len(synthetic_samples), seq_len)
+
+            X_list.append(synthetic_samples)
+            y_list.append(synthetic_labels)
+            lengths_list.append(synthetic_lengths)
+
+    # Combine and shuffle
+    X_bal = np.concatenate(X_list, axis=0)
+    y_bal = np.concatenate(y_list, axis=0)
+    lengths_bal = np.concatenate(lengths_list, axis=0)
+
+    if shuffle:
+        indices = np.arange(len(y_bal))
+        np.random.shuffle(indices)
+        X_bal, y_bal, lengths_bal = X_bal[indices], y_bal[indices], lengths_bal[indices]
+
+    return X_bal, y_bal, lengths_bal
+    
+    
