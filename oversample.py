@@ -285,4 +285,106 @@ def oversample_sequences_smotets(X, y, lengths, target_ratio=0.5, k=5):
     print(f"✅ Final dataset size: {len(X_final)}")
     return X_final, y_final, lengths_final
 
+import numpy as np
+import torch
+import faiss
+from collections import Counter
 
+def oversample_sequences_multiclass_tsmote_faiss(
+    X, y, lengths,
+    target_class_size=None,
+    k_neighbors=5,
+    shuffle=True,
+    random_state=None,
+    device=None
+):
+    """
+    GPU-accelerated T-SMOTE using FAISS for nearest neighbor search.
+    
+    Parameters:
+        X (np.ndarray): shape (n_samples, seq_len, n_features)
+        y (np.ndarray): class labels
+        lengths (np.ndarray): sequence lengths
+        target_class_size (int): target number of samples per class (default=max)
+        k_neighbors (int): neighbors for interpolation
+        shuffle (bool): whether to shuffle result
+        random_state (int): random seed
+        device (torch.device): 'cuda' or 'cpu' (auto-detected if None)
+
+    Returns:
+        X_bal, y_bal, lengths_bal
+    """
+    if random_state is not None:
+        np.random.seed(random_state)
+        torch.manual_seed(random_state)
+
+    device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    class_counts = Counter(y)
+    classes = np.unique(y)
+    if target_class_size is None:
+        target_class_size = max(class_counts.values())
+
+    X_list, y_list, lengths_list = [X], [y], [lengths]
+
+    for cls in classes:
+        X_cls = X[y == cls]
+        n_samples, seq_len, n_features = X_cls.shape
+        count = n_samples
+
+        if count < target_class_size:
+            n_to_sample = target_class_size - count
+
+            # --- Flatten time series for neighbor search ---
+            X_flat = X_cls.reshape(n_samples, -1).astype(np.float32)
+
+            # --- Setup FAISS index ---
+            if torch.cuda.is_available():
+                res = faiss.StandardGpuResources()
+                index = faiss.IndexFlatL2(X_flat.shape[1])  # L2 distance
+                index = faiss.index_cpu_to_gpu(res, 0, index)
+            else:
+                index = faiss.IndexFlatL2(X_flat.shape[1])
+            index.add(X_flat)
+
+            # --- Generate synthetic samples ---
+            synthetic_samples = []
+            for _ in range(n_to_sample):
+                i = np.random.randint(0, n_samples)
+                x_i = X_cls[i]
+                _, indices = index.search(X_flat[i].reshape(1, -1), k_neighbors)
+                # Avoid self
+                j = np.random.choice(indices[0][1:])
+                x_j = X_cls[j]
+
+                # Interpolate on GPU
+                x_i_t = torch.tensor(x_i, dtype=torch.float32, device=device)
+                x_j_t = torch.tensor(x_j, dtype=torch.float32, device=device)
+                alpha = torch.rand(1, device=device)
+                x_syn = alpha * x_i_t + (1 - alpha) * x_j_t
+
+                # Add temporal Gaussian noise
+                temporal_noise = torch.randn_like(x_syn) * 0.01
+                x_syn = x_syn + temporal_noise
+
+                synthetic_samples.append(x_syn.cpu().numpy())
+
+            synthetic_samples = np.array(synthetic_samples)
+            synthetic_labels = np.full(len(synthetic_samples), cls)
+            synthetic_lengths = np.full(len(synthetic_samples), seq_len)
+
+            X_list.append(synthetic_samples)
+            y_list.append(synthetic_labels)
+            lengths_list.append(synthetic_lengths)
+
+    # --- Combine and shuffle ---
+    X_bal = np.concatenate(X_list, axis=0)
+    y_bal = np.concatenate(y_list, axis=0)
+    lengths_bal = np.concatenate(lengths_list, axis=0)
+
+    if shuffle:
+        idx = np.arange(len(y_bal))
+        np.random.shuffle(idx)
+        X_bal, y_bal, lengths_bal = X_bal[idx], y_bal[idx], lengths_bal[idx]
+
+    return X_bal, y_bal, lengths_bal
