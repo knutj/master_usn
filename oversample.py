@@ -287,7 +287,10 @@ def oversample_sequences_smotets(X, y, lengths, target_ratio=0.5, k=5):
 
 import numpy as np
 import torch
-import faiss
+try:
+    import faiss
+except:
+    print("can not import faiss")
 from collections import Counter
 
 def oversample_sequences_multiclass_tsmote_faiss(
@@ -388,12 +391,11 @@ def oversample_sequences_multiclass_tsmote_faiss(
         X_bal, y_bal, lengths_bal = X_bal[idx], y_bal[idx], lengths_bal[idx]
 
     return X_bal, y_bal, lengths_bal
-    
-    
-    
-import torch
+
 from sklearn.neighbors import NearestNeighbors
 from collections import Counter
+import numpy as np
+import torch
 
 def oversample_sequences_multiclass_tsmote_gpu(
     X, y, lengths,
@@ -401,16 +403,14 @@ def oversample_sequences_multiclass_tsmote_gpu(
     k_neighbors=5,
     shuffle=True,
     random_state=None,
-    device=None,max_samples=10000
+    device=None,
+    max_samples=10000
 ):
     """
     GPU-accelerated Temporal-oriented SMOTE (T-SMOTE).
     Uses PyTorch tensors for fast interpolation and temporal noise.
     """
-    
-    
-    
-    
+
     if random_state is not None:
         np.random.seed(random_state)
         torch.manual_seed(random_state)
@@ -426,21 +426,22 @@ def oversample_sequences_multiclass_tsmote_gpu(
 
     for cls in classes:
         X_cls = X[y == cls]
-        if len(X) > max_samples:
-            print(f"⚠ Downsampling class {target_class} from {len(X_class)} to {max_samples} for TS-SMOTE")
-       	    keep_idx = np.random.choice(len(X_cls), max_samples, replace=False)
-            X_cls = X_class[keep_idx]
-    	else:
-            print(f"📏 Using {len(X_class)} samples for SMOTE class {target_class}")
-        
-        
+
+        # Downsample large classes for memory safety
+        if len(X_cls) > max_samples:
+            print(f"⚠ Downsampling class {cls} from {len(X_cls)} to {max_samples} for T-SMOTE")
+            keep_idx = np.random.choice(len(X_cls), max_samples, replace=False)
+            X_cls = X_cls[keep_idx]
+        else:
+            print(f"📏 Using {len(X_cls)} samples for T-SMOTE class {cls}")
+
         n_samples, seq_len, n_features = X_cls.shape
         count = n_samples
 
         if count < target_class_size:
             n_to_sample = target_class_size - count
 
-            # Neighbor search on CPU (scikit-learn)
+            # Neighbor search (CPU)
             X_flat = X_cls.reshape(n_samples, -1)
             nn = NearestNeighbors(n_neighbors=min(k_neighbors, n_samples))
             nn.fit(X_flat)
@@ -473,6 +474,8 @@ def oversample_sequences_multiclass_tsmote_gpu(
             y_list.append(synthetic_labels)
             lengths_list.append(synthetic_lengths)
 
+        torch.cuda.empty_cache()  # free memory after each class
+
     # Combine and shuffle
     X_bal = np.concatenate(X_list, axis=0)
     y_bal = np.concatenate(y_list, axis=0)
@@ -484,5 +487,4 @@ def oversample_sequences_multiclass_tsmote_gpu(
         X_bal, y_bal, lengths_bal = X_bal[indices], y_bal[indices], lengths_bal[indices]
 
     return X_bal, y_bal, lengths_bal
-    
-    
+
