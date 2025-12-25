@@ -489,10 +489,15 @@ def oversample_sequences_multiclass_tsmote_gpu(
     return X_bal, y_bal, lengths_bal
     
     
-    def balance_sequences_hybrid_tsmote(
+    import numpy as np
+import torch
+from collections import Counter
+from sklearn.neighbors import NearestNeighbors
+
+def balance_sequences_hybrid_tsmote(
     X, y, lengths,
-    undersample_target=0.2,
-    oversample_target=0.5,
+    undersample_target=None,
+    oversample_target=None,
     k_neighbors=5,
     shuffle=True,
     random_state=None,
@@ -500,128 +505,153 @@ def oversample_sequences_multiclass_tsmote_gpu(
     max_samples=10000
 ):
     """
-    Hybrid balancing for time series data:
-    1. Random undersampling for large classes
-    2. T-SMOTE oversampling for small classes
-
-    Parameters:
-        X (np.ndarray): shape (n_samples, seq_len, n_features)
-        y (np.ndarray): class labels
-        lengths (np.ndarray): sequence lengths
-        undersample_target (int): max samples per class before undersampling
-        oversample_target (int): desired final samples per class after SMOTE
-        k_neighbors (int): number of neighbors for SMOTE
-        shuffle (bool): whether to shuffle final result
-        random_state (int): reproducibility seed
-        device (torch.device): 'cuda' or 'cpu' (auto)
-        max_samples (int): max samples per class for memory safety
-
-    Returns:
-        X_bal, y_bal, lengths_bal
+    Optimized Hybrid balancing for time series data.
     """
-
-    # Seed reproducibility
+    # 1. Setup
     if random_state is not None:
         np.random.seed(random_state)
         torch.manual_seed(random_state)
 
-    device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Detect device (keep purely numpy if CPU is preferred to avoid transfer overhead)
+    use_cuda = False
+    if device is None:
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+            use_cuda = True
+        else:
+            device = torch.device("cpu")
+    elif device.type == 'cuda':
+        use_cuda = True
 
     class_counts = Counter(y)
     classes = np.unique(y)
     print(f"📊 Original class counts: {class_counts}")
 
-    # Step 1: Random undersampling
+    # Set defaults based on distribution
+    counts_vals = list(class_counts.values())
     if undersample_target is None:
-        undersample_target = np.median(list(class_counts.values())).astype(int)
+        undersample_target = int(np.median(counts_vals))
+    
+    # Pre-allocate lists
+    X_final_list, y_final_list, lengths_final_list = [], [], []
 
-    X_under, y_under, lengths_under = [], [], []
-
+    # --- PROCESS CLASSES ---
     for cls in classes:
-        X_cls = X[y == cls]
-        lengths_cls = lengths[y == cls]
+        # Filter class data
+        mask = (y == cls)
+        X_cls = X[mask]
+        len_cls = lengths[mask]
         count = len(X_cls)
-
+        
+        # --- A. UNDERSAMPLING ---
         if count > undersample_target:
-            print(f"⚠️ Undersampling class {cls} from {count} → {undersample_target}")
+            print(f"⚠️ Undersampling class {cls}: {count} → {undersample_target}")
             keep_idx = np.random.choice(count, undersample_target, replace=False)
             X_cls = X_cls[keep_idx]
-            lengths_cls = lengths_cls[keep_idx]
+            len_cls = len_cls[keep_idx]
+            count = undersample_target # Update count for oversampling logic check
         else:
-            print(f"📏 Keeping all {count} samples for class {cls}")
+            print(f"📏 Keeping class {cls}: {count} samples")
 
-        y_cls = np.full(len(X_cls), cls)
-        X_under.append(X_cls)
-        y_under.append(y_cls)
-        lengths_under.append(lengths_cls)
+        # Add processed original data to final lists
+        X_final_list.append(X_cls)
+        y_final_list.append(np.full(len(X_cls), cls))
+        lengths_final_list.append(len_cls)
 
-    X_under = np.concatenate(X_under, axis=0)
-    y_under = np.concatenate(y_under, axis=0)
-    lengths_under = np.concatenate(lengths_under, axis=0)
+        # --- B. OVERSAMPLING (Vectorized T-SMOTE) ---
+        # Determine target count (default to max class count found so far or specified)
+        target_count = oversample_target if oversample_target else max(counts_vals)
+        
+        if count < target_count:
+            n_to_sample = target_count - count
+            print(f"🧠 T-SMOTE Class {cls}: Generating +{n_to_sample} samples")
 
-    print(f"✅ After undersampling: {Counter(y_under)}")
+            # Safety: Cannot SMOTE with < 2 samples
+            if count < 2:
+                print(f"   ↳ Not enough samples for SMOTE (n={count}). Random duplicating instead.")
+                rand_idx = np.random.choice(count, n_to_sample, replace=True)
+                X_syn, len_syn = X_cls[rand_idx], len_cls[rand_idx]
+            else:
+                # 1. Fit Nearest Neighbors on flattened temporal data
+                # Handle max_samples for NN fitting (speed optimization)
+                if count > max_samples:
+                    fit_idx = np.random.choice(count, max_samples, replace=False)
+                    X_fit = X_cls[fit_idx]
+                else:
+                    X_fit = X_cls
 
-    # Step 2: Temporal SMOTE oversampling
-    if oversample_target is None:
-        oversample_target = max(Counter(y_under).values())
+                n_neighbors = min(k_neighbors, len(X_fit) - 1)
+                nn = NearestNeighbors(n_neighbors=n_neighbors, n_jobs=-1)
+                nn.fit(X_fit.reshape(len(X_fit), -1))
 
-    X_list, y_list, lengths_list = [X_under], [y_under], [lengths_under]
+                # 2. Select Parents (Vectorized)
+                # Randomly pick base samples (X_i) from available data
+                base_indices = np.random.choice(len(X_cls), n_to_sample, replace=True)
+                X_base = X_cls[base_indices]
+                len_base = len_cls[base_indices] # Inherit length from base
 
-    for cls in classes:
-        X_cls = X_under[y_under == cls]
-        n_samples, seq_len, n_features = X_cls.shape
-        count = n_samples
+                # Find neighbors for these base samples
+                # Note: We query NN for the base samples to find their specific neighbors
+                # We flatten just for the query
+                dists, ind = nn.kneighbors(X_base.reshape(n_to_sample, -1), return_distance=False)
+                
+                # Randomly pick one neighbor (X_j) for each base sample
+                # ind has shape (n_to_sample, n_neighbors)
+                neighbor_cols = np.random.randint(0, n_neighbors, size=n_to_sample)
+                neighbor_indices_local = ind[np.arange(n_to_sample), neighbor_cols]
+                
+                # Map back if we subsampled for X_fit, otherwise direct map
+                if count > max_samples:
+                     # If we fit on a subset, neighbor_indices point to X_fit, not X_cls
+                     # We must retrieve from X_fit
+                     X_neighbor = X_fit[neighbor_indices_local]
+                else:
+                     X_neighbor = X_cls[neighbor_indices_local]
 
-        if len(X_cls) > max_samples:
-            print(f"⚠️ Downsampling class {cls} to {max_samples} before SMOTE")
-            keep_idx = np.random.choice(len(X_cls), max_samples, replace=False)
-            X_cls = X_cls[keep_idx]
-            n_samples = len(X_cls)
+                # 3. Interpolate (PyTorch for GPU speed, or Numpy)
+                if use_cuda:
+                    # Move batch to GPU
+                    t_base = torch.from_numpy(X_base).to(device).float()
+                    t_neighbor = torch.from_numpy(X_neighbor).to(device).float()
+                    
+                    # Generate random alphas: shape (n_to_sample, 1, 1) for broadcasting
+                    lambdas = torch.rand(n_to_sample, 1, 1, device=device)
+                    
+                    # Vectorized Interpolation
+                    t_syn = t_base + lambdas * (t_neighbor - t_base)
+                    
+                    # Add Noise
+                    noise = torch.randn_like(t_syn) * 0.01
+                    t_syn += noise
+                    
+                    X_syn = t_syn.cpu().numpy()
+                    del t_base, t_neighbor, t_syn, lambdas
+                    torch.cuda.empty_cache()
+                else:
+                    # Numpy implementation
+                    lambdas = np.random.rand(n_to_sample, 1, 1)
+                    X_syn = X_base + lambdas * (X_neighbor - X_base)
+                    X_syn += np.random.normal(0, 0.01, X_syn.shape)
 
-        if count < oversample_target:
-            n_to_sample = oversample_target - count
-            print(f"🧠 Oversampling class {cls}: +{n_to_sample} (using T-SMOTE)")
+                # 4. Masking (Critical for variable lengths)
+                # Ensure synthetic data respects padding. If base sample had len 10,
+                # synthetic sample must be 0 after index 10.
+                seq_len = X.shape[1]
+                mask_matrix = np.arange(seq_len)[None, :] < len_base[:, None]
+                # Expand mask to features
+                mask_matrix = np.repeat(mask_matrix[:, :, np.newaxis], X.shape[2], axis=2)
+                X_syn = np.where(mask_matrix, X_syn, 0.0)
+                
+                len_syn = len_base
 
-            # Nearest neighbor search (CPU)
-            X_flat = X_cls.reshape(n_samples, -1)
-            nn = NearestNeighbors(n_neighbors=min(k_neighbors, n_samples))
-            nn.fit(X_flat)
+            X_final_list.append(X_syn)
+            y_final_list.append(np.full(n_to_sample, cls))
+            lengths_final_list.append(len_syn)
 
-            synthetic_samples = []
-            for _ in range(n_to_sample):
-                i = np.random.randint(0, n_samples)
-                x_i = X_cls[i]
-                _, indices = nn.kneighbors(X_flat[i].reshape(1, -1))
-                j = np.random.choice(indices[0][1:])
-                x_j = X_cls[j]
-
-                # Move to GPU tensors for interpolation
-                x_i_t = torch.tensor(x_i, dtype=torch.float32, device=device)
-                x_j_t = torch.tensor(x_j, dtype=torch.float32, device=device)
-
-                alpha = torch.rand(1, device=device)
-                x_syn = alpha * x_i_t + (1 - alpha) * x_j_t
-
-                # Temporal Gaussian noise
-                temporal_noise = torch.randn_like(x_syn) * 0.01
-                x_syn = x_syn + temporal_noise
-
-                synthetic_samples.append(x_syn.cpu().numpy())
-
-            synthetic_samples = np.array(synthetic_samples)
-            synthetic_labels = np.full(len(synthetic_samples), cls)
-            synthetic_lengths = np.full(len(synthetic_samples), seq_len)
-
-            X_list.append(synthetic_samples)
-            y_list.append(synthetic_labels)
-            lengths_list.append(synthetic_lengths)
-
-        torch.cuda.empty_cache()
-
-    # Combine and shuffle
-    X_bal = np.concatenate(X_list, axis=0)
-    y_bal = np.concatenate(y_list, axis=0)
-    lengths_bal = np.concatenate(lengths_list, axis=0)
+    # Combine
+    X_bal = np.concatenate(X_final_list, axis=0)
+    y_bal = np.concatenate(y_final_list, axis=0)
+    lengths_bal = np.concatenate(lengths_final_list, axis=0)
 
     if shuffle:
         indices = np.arange(len(y_bal))
@@ -632,6 +662,5 @@ def oversample_sequences_multiclass_tsmote_gpu(
 
     print(f"🏁 Final class distribution: {Counter(y_bal)}")
     return X_bal, y_bal, lengths_bal
-    
     
 
