@@ -694,15 +694,16 @@ from imblearn.over_sampling import SMOTE
 
 def undersample_oversampling_xgobost(X, y, random_state=42):
     """
-    Undersample classes above mean count,
-    Oversample classes below mean count (up to mean),
-    using class distribution from current split.
-    Preserves pandas DataFrame / Series.
+    Undersample classes above the mean, and oversample those below.
+    Only operate on classes present in the current dataset.
+    Preserves pandas DataFrame / Series format.
     """
+    if isinstance(y, pd.DataFrame):
+        y = y["label"].to_numpy()
     class_counts = Counter(y)
     mean_class_size = int(np.mean(list(class_counts.values())))
 
-    # --- Step 1: Undersampling ---
+    # --- Safe undersampling ---
     under_strategy = {
         cls: min(mean_class_size, count)
         for cls, count in class_counts.items()
@@ -711,13 +712,13 @@ def undersample_oversampling_xgobost(X, y, random_state=42):
     rus = RandomUnderSampler(sampling_strategy=under_strategy, random_state=random_state)
     X_under, y_under = rus.fit_resample(X, y)
 
-    # Restore pandas structure
+    # Restore to pandas
     if isinstance(X, pd.DataFrame):
         X_under = pd.DataFrame(X_under, columns=X.columns)
     if isinstance(y, pd.Series):
         y_under = pd.Series(y_under, name=y.name)
 
-    # --- Step 2: Oversampling ---
+    # --- Safe oversampling ---
     class_counts_under = Counter(y_under)
     over_strategy = {
         cls: mean_class_size for cls, count in class_counts_under.items()
@@ -728,7 +729,7 @@ def undersample_oversampling_xgobost(X, y, random_state=42):
         smote = SMOTE(sampling_strategy=over_strategy, random_state=random_state)
         X_bal, y_bal = smote.fit_resample(X_under, y_under)
 
-        # Restore pandas structure
+        # Convert back to pandas
         if isinstance(X, pd.DataFrame):
             X_bal = pd.DataFrame(X_bal, columns=X.columns)
         if isinstance(y, pd.Series):
@@ -736,4 +737,5 @@ def undersample_oversampling_xgobost(X, y, random_state=42):
     else:
         X_bal, y_bal = X_under, y_under
 
+    y_bal = pd.DataFrame(y_bal, columns=["label"])
     return X_bal, y_bal

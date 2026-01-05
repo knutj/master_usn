@@ -16,8 +16,7 @@ from sklearn.metrics import classification_report, confusion_matrix, precision_s
 from sklearn.preprocessing import OrdinalEncoder
 from imblearn.under_sampling import RandomUnderSampler,NearMiss
 from sklearn.model_selection import cross_val_score
-#!pip install scipy
-#from scipy import interp
+
 from imblearn.under_sampling import RandomUnderSampler
 from collections import Counter
 from sklearn.model_selection import train_test_split
@@ -53,7 +52,7 @@ print(X.columns)
 X = X.drop(columns=['id'])
 
 counts = y['dlabel'].value_counts()
-mask = counts[counts >= 2000].index
+mask = counts[counts >= 30000].index
 
 y = y[y['dlabel'].isin(mask)]
 X = X.loc[y.index]
@@ -144,9 +143,9 @@ x_df, X_val, y_df, y_val = train_test_split(X, y, test_size=0.3, random_state=42
 #x_df, y_df = rus.fit_resample(x_df_all, y_df_all)
 print("findished under sampleing")
 number_class = np.unique(y_df["label"])
-
-
-
+print(number_class)
+num_class=len(number_class)
+print(num_class)
 
 
 
@@ -158,7 +157,7 @@ number_class = np.unique(y_df["label"])
 
 param = {
     'objective': 'multi:softmax',  # or 'multi:softprob' for probability output
-    'num_class': number_class,
+    'num_class': num_class,
     'nthread': 10,
     'seed': 1,
     'device': 'cuda'
@@ -265,7 +264,7 @@ from sklearn.model_selection import cross_val_score
 from sklearn.metrics import roc_auc_score
 
 
-
+print(number_class)
 
 def objective(trial):
     params = {
@@ -279,7 +278,7 @@ def objective(trial):
         'eval_metric': 'logloss',
         'random_state': 42,
         'objective': 'multi:softprob',  # or 'multi:softprob' for probability output
-        'num_class': number_class,
+        'num_class': num_class,
         'nthread': 10,
         'seed': 1,
         'device': 'cuda'
@@ -290,13 +289,37 @@ def objective(trial):
     mean_tpr = 0.0
     mean_fpr = np.linspace(0, 1, 100)
     scores = []
-    for train_indices, test_indices in skf.split(x_df, y_df['label']):
+    print("enter fold opttuna")
+    for train_indices, test_indices in skf.split(x_df, y_df):
         X_train_all, X_test = x_df.iloc[train_indices], x_df.iloc[test_indices]
         y_train_all, y_test = y_df.iloc[train_indices], y_df.iloc[test_indices]
+        #y_train_all=y_train_all.to_frame()   
+        #y_test=y_test.to_frame()
+        if isinstance(y_train_all, pd.Series):
+            y_train_all = y_train_all.to_frame(name="label")
+        if isinstance(y_test, pd.Series):
+            y_test = y_test.to_frame(name="label")
+        assert "label" in y_train_all.columns, "❌ 'label' column is missing from the DataFrame!"
+        assert "label" in y_test.columns, "❌ 'label' column is missing from the DataFrame!"
+        #print(number_class)
+        expected_labels = set(number_class)
+
+        if set(y_train_all['label'].unique()) != expected_labels or set(y_test['label'].unique()) != expected_labels:
+            print("⚠️ Skipping fold due to missing classes.")
+            scores.append(0)
+            continue
+
+        
 
         #X_train, y_train = smote.fit_resample(X_train_all, y_train_all)
         #under and oversample
         X_train,y_train=undersample_oversampling_xgobost(X_train_all,y_train_all)
+        
+        assert "label" in y_train.columns, "❌ 'label' column is missing from the DataFrame!"
+       
+        if isinstance(y_train, pd.Series):
+            y_train = y_train.to_frame(name="label")
+
         #train
         model.fit(X_train, y_train)
 
@@ -350,6 +373,8 @@ for train_indices, test_indices in skf.split(x_df, y_df['label']):
     #under and oversample
     X_train,y_train=undersample_oversampling_xgobost(X_train_all,y_train_all)
     # Train the model
+    
+
     
     xgb_opt.fit(X_train,y_train)
     # Predict probabilities for all classes (shape: [n_valid, n_classes])
