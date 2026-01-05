@@ -520,29 +520,72 @@ test_data = confusion_matrix(y_val.label,xgb_opt.predict(X_val),normalize="pred"
 import seaborn as sms
 #print(training_data)
 #training_data = np.diag(training_data)
-plt.figure(figsize=(12, 8))
-sms.heatmap(test_data, annot=True, fmt='.1f', cmap='Blues', xticklabels=sorted_labels, yticklabels=sorted_labels)
-plt.xlabel('Predicted Label')
-plt.ylabel('True Label')
-plt.xticks(rotation=45, ha='right')
-plt.title('Confusion Matrix tesetdata')
-plt.savefig(os.path.join(figure_path,"tcm_diag_smot.png"))
-plt.show()
+#plt.figure(figsize=(12, 8))
 
+# Create the plot area
+fig, ax = plt.subplots(figsize=(14, 12))  # Bigger plot = better label space
+
+# Create the heatmap ON THE AXES
+sns.heatmap(
+    test_data,
+    annot=True,
+    fmt='.1f',
+    cmap='Blues',
+    xticklabels=sorted_labels,
+    yticklabels=sorted_labels,
+    ax=ax  # ✅ attach to the right axes!
+)
+
+
+
+# Fix x/y tick labels
+# Set axis labels and ticks
+ax.set_xlabel('Predicted Label', fontsize=12)
+ax.set_ylabel('True Label', fontsize=12)
+ax.set_title('Confusion Matrix Test Data', fontsize=14)
+
+
+# Rotate x-axis labels to avoid overlap
+ax.tick_params(axis='x', rotation=45)
+ax.tick_params(axis='y', rotation=0)
+
+# Save and show the plot
+plt.tight_layout()  # ✅ Prevent label clipping
+plt.savefig(os.path.join(figure_path, "tcm_diag_smot.png"))
+plt.show()
 
 for k, v in tranlate_dic.items():
     print(f"{k}: {v}")
 
 
+# Extract class labels in the correct order
 labels_ordered = [tranlate_dic[str(i)] for i in range(len(tranlate_dic))]
+
+# Extract diagonal values (correct predictions)
 diagonal = np.diag(test_data)
-plt.bar(range(len(tranlate_dic)), diagonal)
-plt.figure(figsize=(12, 8))
-plt.xlabel('Class')
-plt.ylabel('Correct predictions')
-plt.xticks(ticks=range(len(labels_ordered)), labels=labels_ordered, rotation=45)
+
+# Set figure size and create the plot
+fig, ax = plt.subplots(figsize=(14, 8))  # Larger width for better spacing
+
+# Plot the bars
+ax.bar(range(len(labels_ordered)), diagonal, color='skyblue', edgecolor='black')
+
+# Axis labels and title
+ax.set_xlabel('Class', fontsize=12)
+ax.set_ylabel('Correct Predictions', fontsize=12)
+ax.set_title('Correct Predictions per Class (Diagonal of Confusion Matrix)', fontsize=14)
+
+# Improve tick labels
+ax.set_xticks(range(len(labels_ordered)))
+ax.set_xticklabels(labels_ordered, rotation=45, ha='right', fontsize=10)
+
+# Add value labels on top of bars (optional)
+for i, val in enumerate(diagonal):
+    ax.text(i, val + max(diagonal) * 0.01, str(int(val)), ha='center', va='bottom', fontsize=8)
+
+# Layout and save
 plt.tight_layout()
-plt.savefig(os.path.join(figure_path,"terst_bar_diag_smot.png"))
+plt.savefig(os.path.join(figure_path, "terst_bar_diag_smot.png"))
 plt.show()
 
 import graphviz as gv
