@@ -688,30 +688,52 @@ def _plot_class_distribution(class_counts, title="Class Distribution"):
     plt.show()
     plt.close()
 
-def undersample_oversampling_xgobost(X_train_all,y_train_all):
-     # Step 1: Compute mean class size
-    class_counts = Counter(y_train_all)
+from collections import Counter
+from imblearn.under_sampling import RandomUnderSampler
+from imblearn.over_sampling import SMOTE
+
+def undersample_oversampling_xgobost(X, y, random_state=42):
+    """
+    Undersample classes above mean count,
+    Oversample classes below mean count (up to mean),
+    using class distribution from current split.
+    Preserves pandas DataFrame / Series.
+    """
+    class_counts = Counter(y)
     mean_class_size = int(np.mean(list(class_counts.values())))
 
-    # Step 2: Create custom sampling strategies
-    # --- Undersample majority classes to the mean ---
-    under_strategy = {cls: min(mean_class_size, count) for cls, count in class_counts.items()}
+    # --- Step 1: Undersampling ---
+    under_strategy = {
+        cls: min(mean_class_size, count)
+        for cls, count in class_counts.items()
+    }
 
-    # Apply undersampling
-    rus = RandomUnderSampler(sampling_strategy=under_strategy, random_state=42)
-    X_train_under, y_train_under = rus.fit_resample(X_train_all, y_train_all)
+    rus = RandomUnderSampler(sampling_strategy=under_strategy, random_state=random_state)
+    X_under, y_under = rus.fit_resample(X, y)
 
-    # Step 3: Update class counts after undersampling
-    class_counts_under = Counter(y_train_under)
+    # Restore pandas structure
+    if isinstance(X, pd.DataFrame):
+        X_under = pd.DataFrame(X_under, columns=X.columns)
+    if isinstance(y, pd.Series):
+        y_under = pd.Series(y_under, name=y.name)
 
-    # --- Oversample minority classes to the mean ---
-    over_strategy = {cls: mean_class_size for cls, count in class_counts_under.items() if count < mean_class_size}
+    # --- Step 2: Oversampling ---
+    class_counts_under = Counter(y_under)
+    over_strategy = {
+        cls: mean_class_size for cls, count in class_counts_under.items()
+        if count < mean_class_size
+    }
 
-    # Apply SMOTE only if necessary
     if over_strategy:
-        smote = SMOTE(sampling_strategy=over_strategy, random_state=42)
-        X_train, y_train = smote.fit_resample(X_train_under, y_train_under)
-    else:
-        X_train, y_train = X_train_under, y_train_under
+        smote = SMOTE(sampling_strategy=over_strategy, random_state=random_state)
+        X_bal, y_bal = smote.fit_resample(X_under, y_under)
 
-    return X_train_all,y_train_all     
+        # Restore pandas structure
+        if isinstance(X, pd.DataFrame):
+            X_bal = pd.DataFrame(X_bal, columns=X.columns)
+        if isinstance(y, pd.Series):
+            y_bal = pd.Series(y_bal, name=y.name)
+    else:
+        X_bal, y_bal = X_under, y_under
+
+    return X_bal, y_bal
