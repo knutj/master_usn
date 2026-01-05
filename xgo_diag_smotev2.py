@@ -201,7 +201,7 @@ for train_indices, test_indices in skf.split(x_df, y_df['label']):
 
 
     #under and oversample
-    X_train_all,y_train_all=undersample_oversampling_xgobost(X_train_all,y_train_all)
+    X_train,y_train=undersample_oversampling_xgobost(X_train_all,y_train_all)
 
 
     #xgb1.fit(X_train, y_train,sample_weight=class_weight_scale)
@@ -296,7 +296,7 @@ def objective(trial):
 
         #X_train, y_train = smote.fit_resample(X_train_all, y_train_all)
         #under and oversample
-        X_train_all,y_train_all=undersample_oversampling_xgobost(X_train_all,y_train_all)
+        X_train,y_train=undersample_oversampling_xgobost(X_train_all,y_train_all)
         #train
         model.fit(X_train, y_train)
 
@@ -348,7 +348,7 @@ for train_indices, test_indices in skf.split(x_df, y_df['label']):
     #X_train, y_train = smote.fit_resample(X_train_all, y_train_all)
     #X_train, y_train = smote.fit_resample(X_train_all, y_train_all)
     #under and oversample
-    X_train_all,y_train_all=undersample_oversampling_xgobost(X_train_all,y_train_all)
+    X_train,y_train=undersample_oversampling_xgobost(X_train_all,y_train_all)
     # Train the model
     
     xgb_opt.fit(X_train,y_train)

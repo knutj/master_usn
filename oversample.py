@@ -9,15 +9,15 @@ import pandas as pd
 import numpy as np
 import torch
 import torch.nn as nn
-import matplotlib.pyplot as plt
+
 import torch.nn.functional as F
 import optuna
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import roc_auc_score, f1_score
 from sklearn.preprocessing import OrdinalEncoder, label_binarize
 from torch.utils.data import Dataset, DataLoader
-from imblearn.over_sampling import SMOTE
 from imblearn.under_sampling import RandomUnderSampler
+from imblearn.over_sampling import SMOTE
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from typing import List, Tuple
 from torch.amp import autocast, GradScaler
@@ -27,13 +27,8 @@ from optuna.logging import set_verbosity, CRITICAL
 import sys
 from sklearn.metrics import f1_score, roc_auc_score
 from tsaug import TimeWarp, Drift, Reverse, Quantize, AddNoise
-from collections import Counter
 # %%
 import random
-
-from sklearn.neighbors import NearestNeighbors
-
-
 
 
 def oversample_sequences_multiclass(X, y, lengths, target_class_size=None, shuffle=True, random_state=None):
@@ -159,7 +154,8 @@ def oversample_sequences_multiclass_tsaug(
 
     return X_aug, y_aug, lengths_aug
 
-
+import numpy as np
+from collections import Counter
 
 try:
     from tslearn.metrics import cdist_dtw
@@ -296,7 +292,7 @@ try:
     import faiss
 except:
     print("can not import faiss")
-
+from collections import Counter
 
 def oversample_sequences_multiclass_tsmote_faiss(
     X, y, lengths,
@@ -397,7 +393,10 @@ def oversample_sequences_multiclass_tsmote_faiss(
 
     return X_bal, y_bal, lengths_bal
 
-
+from sklearn.neighbors import NearestNeighbors
+from collections import Counter
+import numpy as np
+import torch
 
 def oversample_sequences_multiclass_tsmote_gpu(
     X, y, lengths,
@@ -490,8 +489,22 @@ def oversample_sequences_multiclass_tsmote_gpu(
 
     return X_bal, y_bal, lengths_bal
 
+from collections import Counter
+import numpy as np
+import torch
+from sklearn.neighbors import NearestNeighbors
 
+import numpy as np
+import torch
+import matplotlib.pyplot as plt
+from collections import Counter
+from sklearn.neighbors import NearestNeighbors
 
+from collections import Counter
+import numpy as np
+import torch
+from sklearn.neighbors import NearestNeighbors
+import matplotlib.pyplot as plt
 
 def balance_sequences_hybrid_tsmote(
     X, y, lengths,
