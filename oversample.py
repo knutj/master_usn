@@ -675,7 +675,7 @@ def _plot_class_distribution(class_counts, title="Class Distribution"):
     plt.show()
     plt.close()
 
-def undersample_oversampling_xgobost(x_train_all,y_train_all):
+def undersample_oversampling_xgobost(X_train_all,y_train_all):
      # Step 1: Compute mean class size
     class_counts = Counter(y_train_all)
     mean_class_size = int(np.mean(list(class_counts.values())))
