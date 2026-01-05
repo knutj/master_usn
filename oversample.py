@@ -1,4 +1,4 @@
-mport os
+import os
 
 from optuna.logging import set_verbosity, WARNING
 import dask.dataframe as dd
@@ -9,7 +9,7 @@ import pandas as pd
 import numpy as np
 import torch
 import torch.nn as nn
-
+import matplotlib.pyplot as plt
 import torch.nn.functional as F
 import optuna
 from sklearn.model_selection import train_test_split
@@ -17,6 +17,7 @@ from sklearn.metrics import roc_auc_score, f1_score
 from sklearn.preprocessing import OrdinalEncoder, label_binarize
 from torch.utils.data import Dataset, DataLoader
 from imblearn.over_sampling import SMOTE
+from imblearn.under_sampling import RandomUnderSampler
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from typing import List, Tuple
 from torch.amp import autocast, GradScaler
@@ -26,8 +27,13 @@ from optuna.logging import set_verbosity, CRITICAL
 import sys
 from sklearn.metrics import f1_score, roc_auc_score
 from tsaug import TimeWarp, Drift, Reverse, Quantize, AddNoise
+from collections import Counter
 # %%
 import random
+
+from sklearn.neighbors import NearestNeighbors
+
+
 
 
 def oversample_sequences_multiclass(X, y, lengths, target_class_size=None, shuffle=True, random_state=None):
@@ -83,9 +89,9 @@ def oversample_sequences_multiclass(X, y, lengths, target_class_size=None, shuff
     return X_bal, y_bal, lengths_bal
 
 def oversample_sequences_multiclass_tsaug(
-    X, y, lengths,
-    target_class_size=None,
-    shuffle=True,
+    X, y, lengths, 
+    target_class_size=None, 
+    shuffle=True, 
     random_state=None
 ):
     """
@@ -153,8 +159,7 @@ def oversample_sequences_multiclass_tsaug(
 
     return X_aug, y_aug, lengths_aug
 
-import numpy as np
-from collections import Counter
+
 
 try:
     from tslearn.metrics import cdist_dtw
@@ -193,7 +198,7 @@ def smote_ts_dtw(X, y, target_class, k=5, n_new=100, use_dtw=False,max_samples=2
     """
     idx_class = np.where(y == target_class)[0]
     X_class = X[idx_class]
-    MAX_DTW_SAMPLES = 300
+    MAX_DTW_SAMPLES = 300 
 
     if len(X_class) > 300:
         USE_DTW = False
@@ -216,7 +221,7 @@ def smote_ts_dtw(X, y, target_class, k=5, n_new=100, use_dtw=False,max_samples=2
     # --------------------------------------------------------
         X_flat = X_class.reshape(len(X_class), -1)
         dist_matrix = euclidean_gpu(X_flat)
-   
+    
     except:
         print(f"📏 Using Euclidean distance for class {target_class}...")
         dist_matrix = cdist(X_class.reshape(len(X_class), -1), X_class.reshape(len(X_class), -1))
@@ -291,7 +296,7 @@ try:
     import faiss
 except:
     print("can not import faiss")
-from collections import Counter
+
 
 def oversample_sequences_multiclass_tsmote_faiss(
     X, y, lengths,
@@ -303,7 +308,7 @@ def oversample_sequences_multiclass_tsmote_faiss(
 ):
     """
     GPU-accelerated T-SMOTE using FAISS for nearest neighbor search.
-   
+    
     Parameters:
         X (np.ndarray): shape (n_samples, seq_len, n_features)
         y (np.ndarray): class labels
@@ -392,10 +397,7 @@ def oversample_sequences_multiclass_tsmote_faiss(
 
     return X_bal, y_bal, lengths_bal
 
-from sklearn.neighbors import NearestNeighbors
-from collections import Counter
-import numpy as np
-import torch
+
 
 def oversample_sequences_multiclass_tsmote_gpu(
     X, y, lengths,
@@ -488,16 +490,8 @@ def oversample_sequences_multiclass_tsmote_gpu(
 
     return X_bal, y_bal, lengths_bal
 
-from collections import Counter
-import numpy as np
-import torch
-from sklearn.neighbors import NearestNeighbors
 
-import numpy as np
-import torch
-import matplotlib.pyplot as plt
-from collections import Counter
-from sklearn.neighbors import NearestNeighbors
+
 
 def balance_sequences_hybrid_tsmote(
     X, y, lengths,
@@ -508,35 +502,16 @@ def balance_sequences_hybrid_tsmote(
     random_state=None,
     device=None,
     max_samples=40000,
-    plot_distributions=False  # New!
+    plot_distributions=False
 ):
     """
     Hybrid balancing for time series data:
     1. Random undersampling for large classes
     2. T-SMOTE oversampling for small classes
 
-    Parameters:
-        X (np.ndarray): shape (n_samples, seq_len, n_features)
-        y (np.ndarray): class labels
-        lengths (np.ndarray): sequence lengths
-        undersample_target (float or int): If float in (0,1), proportion of samples to retain per class.
-                                           If int ≥ 1, maximum number of samples per class.
-                                           If None, median of class sizes is used.
-        oversample_target (float or int): If float in (0,1), proportion of the largest class count to match.
-                                          If int ≥ 1, desired sample count per class after SMOTE.
-                                          If None, max class size used.
-        k_neighbors (int): number of neighbors for SMOTE
-        shuffle (bool): whether to shuffle final result
-        random_state (int): reproducibility seed
-        device (torch.device): 'cuda' or 'cpu' (auto)
-        max_samples (int): max samples per class for memory safety
-        plot_distributions (bool): whether to show class distribution bar plots
-
     Returns:
         X_bal, y_bal, lengths_bal
     """
-    perform_under_samling=False
-    undersample = False
     if random_state is not None:
         np.random.seed(random_state)
         torch.manual_seed(random_state)
@@ -551,21 +526,18 @@ def balance_sequences_hybrid_tsmote(
         _plot_class_distribution(class_counts, title="Before Balancing")
 
     mean_class_size = np.mean(list(class_counts.values()))
-    # Step 1: Random undersampling
+    undersampled_classes = set()
+
     if undersample_target is None:
         undersample_target = int(np.median(list(class_counts.values())))
 
-   
-
     X_under, y_under, lengths_under = [], [], []
 
+    # Step 1: Random undersampling for classes above mean
     for cls in classes:
         X_cls = X[y == cls]
         lengths_cls = lengths[y == cls]
         count = len(X_cls)
-
-        if count > mean_class_size:
-            perform_under_samling = True
 
         if isinstance(undersample_target, float) and 0 < undersample_target < 1:
             n_keep = int(count * undersample_target)
@@ -574,12 +546,12 @@ def balance_sequences_hybrid_tsmote(
         else:
             raise ValueError("undersample_target must be a float in (0,1) or an integer ≥ 1")
 
-        if count > n_keep and count > mean_class_size and perform_under_samling==True :
+        if count > n_keep and count > mean_class_size:
             print(f"⚠️ Undersampling class {cls} from {count} → {n_keep}")
             keep_idx = np.random.choice(count, n_keep, replace=False)
             X_cls = X_cls[keep_idx]
             lengths_cls = lengths_cls[keep_idx]
-            undersample = True
+            undersampled_classes.add(cls)
         else:
             print(f"📏 Keeping all {count} samples for class {cls}")
 
@@ -594,27 +566,38 @@ def balance_sequences_hybrid_tsmote(
 
     print(f"✅ After undersampling: {Counter(y_under)}")
 
-    # Step 2: Temporal SMOTE oversampling
+    # Step 2: T-SMOTE oversampling for minority classes
     class_counts_under = Counter(y_under)
     max_class_count = max(class_counts_under.values())
 
+    
+
     if oversample_target is None:
-        oversample_target = max_class_count
-    elif isinstance(oversample_target, float) and 0 < oversample_target < 1 and undersample == False:
+        oversample_target = int(max_class_count*0.5)
+    elif isinstance(oversample_target, float) and 0 < oversample_target < 1:
         oversample_target = int(max_class_count * oversample_target)
-    elif isinstance(oversample_target, int) and oversample_target >= 1 and undersample == False:
-        oversample_target = oversample_target
-    elif isinstance(oversample_target, int) or isinstance(oversample_target, float) and undersample == True:
-        print(f"do not oversample on class that is undersampled. {cls} ")
+    elif isinstance(oversample_target, int) and oversample_target >= 1:
+        pass
     else:
         raise ValueError("oversample_target must be a float in (0,1), int ≥ 1, or None")
 
+   
     X_list, y_list, lengths_list = [X_under], [y_under], [lengths_under]
 
     for cls in classes:
+        if cls in undersampled_classes:
+            print(f"⏭️ Skipping oversampling for class {cls} (was undersampled)")
+            continue
+
+        
+
         X_cls = X_under[y_under == cls]
         n_samples, seq_len, n_features = X_cls.shape
         count = n_samples
+
+        if count >= oversample_target * 0.85:
+            print(f"⚠️ Skipping oversampling for class {cls}: already close to target")
+            continue
 
         if count > max_samples:
             print(f"⚠️ Downsampling class {cls} to {max_samples} before SMOTE")
@@ -626,7 +609,6 @@ def balance_sequences_hybrid_tsmote(
             n_to_sample = oversample_target - count
             print(f"🧠 Oversampling class {cls}: +{n_to_sample} (using T-SMOTE)")
 
-            # Nearest neighbor search (CPU)
             X_flat = X_cls.reshape(n_samples, -1)
             nn = NearestNeighbors(n_neighbors=min(k_neighbors, n_samples))
             nn.fit(X_flat)
@@ -639,14 +621,11 @@ def balance_sequences_hybrid_tsmote(
                 j = np.random.choice(indices[0][1:])
                 x_j = X_cls[j]
 
-                # Move to GPU tensors for interpolation
                 x_i_t = torch.tensor(x_i, dtype=torch.float32, device=device)
                 x_j_t = torch.tensor(x_j, dtype=torch.float32, device=device)
 
                 alpha = torch.rand(1, device=device)
                 x_syn = alpha * x_i_t + (1 - alpha) * x_j_t
-
-                # Temporal Gaussian noise
                 temporal_noise = torch.randn_like(x_syn) * 0.01
                 x_syn = x_syn + temporal_noise
 
@@ -681,7 +660,8 @@ def balance_sequences_hybrid_tsmote(
 
     return X_bal, y_bal, lengths_bal
 
-# 📊 Helper function to plot class distribution
+
+# Helper function
 def _plot_class_distribution(class_counts, title="Class Distribution"):
     classes = sorted(class_counts.keys())
     counts = [class_counts[c] for c in classes]
@@ -694,3 +674,31 @@ def _plot_class_distribution(class_counts, title="Class Distribution"):
     plt.tight_layout()
     plt.show()
     plt.close()
+
+def undersample_oversampling_xgobost(x_train_all,y_train_all):
+     # Step 1: Compute mean class size
+    class_counts = Counter(y_train_all)
+    mean_class_size = int(np.mean(list(class_counts.values())))
+
+    # Step 2: Create custom sampling strategies
+    # --- Undersample majority classes to the mean ---
+    under_strategy = {cls: min(mean_class_size, count) for cls, count in class_counts.items()}
+
+    # Apply undersampling
+    rus = RandomUnderSampler(sampling_strategy=under_strategy, random_state=42)
+    X_train_under, y_train_under = rus.fit_resample(X_train_all, y_train_all)
+
+    # Step 3: Update class counts after undersampling
+    class_counts_under = Counter(y_train_under)
+
+    # --- Oversample minority classes to the mean ---
+    over_strategy = {cls: mean_class_size for cls, count in class_counts_under.items() if count < mean_class_size}
+
+    # Apply SMOTE only if necessary
+    if over_strategy:
+        smote = SMOTE(sampling_strategy=over_strategy, random_state=42)
+        X_train, y_train = smote.fit_resample(X_train_under, y_train_under)
+    else:
+        X_train, y_train = X_train_under, y_train_under
+
+    return X_train_all,y_train_all     
