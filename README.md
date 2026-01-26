@@ -7,7 +7,7 @@
 | `oversample.py`              | SMOTE for time series using Euclidean distance. |
 | `importcsv_version1.py`      | Loads and merges RDAP Excel files. |
 | `clean_data3.py`             | Cleans data, adds readmission column, maps daignosis → ICD-10, calculates stay duration. |
-| `model.py`                   | Contains CNN-LSTM and LSTM architectures in PyTorch. |
+| `ml.py`                   | Contains CNN-LSTM and LSTM architectures in PyTorch. |
 | `prepare_diagnosis.py`       | Prepares data for XGBoost to predict ICD-10 chapters. |
 | `process_data.py`            | Transforms and pads time series data; includes classification reporting. |
 | `xgo_diat_smote.py`          | XGBoost + SMOTE for ICD-10 chapter prediction. |
