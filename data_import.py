@@ -28,8 +28,8 @@ from sklearn.metrics import f1_score, roc_auc_score
 from tsaug import TimeWarp, Drift, Reverse, Quantize, AddNoise
 # %%
 
-
-def startimportdata(df,figure_path,model_path,data_path,name,thershold_count=55000):
+#full run 30000
+def startimportdata(df,figure_path,model_path,data_path,name,thershold_count=30000):
     #thershold_count=30000
     print(df.columns)
 
@@ -37,8 +37,17 @@ def startimportdata(df,figure_path,model_path,data_path,name,thershold_count=550
 
     df = df.sort_values(by=["id", 'visits'])
     df = df.drop(columns=['PERSONID'])
-    keep=['readmission','Omsorg', 'Avdeling','YearEpisode', 'Hastegrad','Pasienter','age_cat','ICD10_code_diagnosis','bidiagnosiscode','treatment_time','id','visits']
+    keep=['Sex','readmission','Omsorg', 'Avdeling','YearEpisode', 'Hastegrad','Pasienter','age_cat','ICD10_code_diagnosis','bidiagnosiscode','treatment_time','id','visits']
     df = df[keep]
+
+    df["Sex"] = (
+    df["Sex"]
+    .astype(str)
+    .str.strip()
+    .str.upper()
+    .map({"M": 0, "K": 1})
+)
+
 
     enc = OrdinalEncoder()
 
@@ -83,8 +92,8 @@ def startimportdata(df,figure_path,model_path,data_path,name,thershold_count=550
 
 
 
-
-
+    mask = df['nlabel'] != "Error diagnosis missing from rdap"
+    df = df[mask]
     
     # Create subject-level labels for stratification
 
@@ -153,10 +162,19 @@ def startimportdata_re(df,figure_path,model_path,data_path,name):
 
     df = df.sort_values(by=["id", 'visits'])
     df = df.drop(columns=['PERSONID'])
-    keep=['readmission','Omsorg', 'Avdeling','YearEpisode', 'Hastegrad','Pasienter','age_cat','ICD10_code_diagnosis','bidiagnosiscode','treatment_time','id','visits']
+    keep=['Sex','readmission','Omsorg', 'Avdeling','YearEpisode', 'Hastegrad','Pasienter','age_cat','ICD10_code_diagnosis','bidiagnosiscode','treatment_time','id','visits']
     df = df[keep]
 
     enc = OrdinalEncoder()
+
+    df["Sex"] = (
+    df["Sex"]
+    .astype(str)
+    .str.strip()
+    .str.upper()
+    .map({"M": 0, "K": 1})
+)
+
 
     Feature_collums = [ 'readmission','Omsorg', 'Avdeling','YearEpisode', 'Hastegrad','Pasienter','age_cat','ICD10_code_diagnosis','bidiagnosiscode','treatment_time']
     df[Feature_collums] = enc.fit_transform(df[Feature_collums])

@@ -24,15 +24,15 @@ from imblearn.over_sampling import SMOTE
 
 from oversample import undersample_oversampling_xgobost
 smote = SMOTE(random_state=42)
-figure_path=os.path.join(os.getcwd(), 'figures','xgo_diag')
+figure_path=os.path.join(os.getcwd(), 'figures','xgo_diagv2_smote')
 if not os.path.exists(figure_path):
     os.makedirs(figure_path)
 
-model_path=os.path.join(os.getcwd(), 'models', 'xgo_diag')
+model_path=os.path.join(os.getcwd(), 'models', 'xgo_diagv2_smote')
 if not os.path.exists(model_path):
     os.makedirs(model_path)
 
-data_path=os.path.join(os.getcwd(), 'data', 'xgo_diag')
+data_path=os.path.join(os.getcwd(), 'data', 'xgo_diagv2_smote')
 if not os.path.exists(data_path):
     os.makedirs(data_path)
 
@@ -43,13 +43,22 @@ X = pd.read_parquet('data/x_diag_df.parque')
 y = pd.read_parquet('data/y_diag_df.parque')
 
 
+
+
+#X=X[:400000]
+#y=y[:400000]
 X = X.dropna()
 y = y.loc[X.index]
 
 y = y.rename(columns={'label':'dlabel'})
 
+mask = y['dlabel'] != "Error diagnosis missing from rdap"
+
+y = y[mask]
+X = X.loc[y.index]
+
 print(X.columns)
-X = X.drop(columns=['id'])
+#X = X.drop(columns=['id'])
 
 counts = y['dlabel'].value_counts()
 mask = counts[counts >= 30000].index
@@ -158,7 +167,7 @@ print(num_class)
 param = {
     'objective': 'multi:softmax',  # or 'multi:softprob' for probability output
     'num_class': num_class,
-    'nthread': 10,
+    'nthread': 20,
     'seed': 1,
     'device': 'cuda'
 }
@@ -202,9 +211,14 @@ for train_indices, test_indices in skf.split(x_df, y_df['label']):
     #under and oversample
     X_train,y_train=undersample_oversampling_xgobost(X_train_all,y_train_all)
 
+    # compute class weights
+    classes = np.unique(y_train['label'])
+    class_weights = compute_class_weight(class_weight='balanced',classes=classes,y=y_train['label'])
+    class_weight_dict = dict(zip(classes, class_weights))
+    sample_weight = y_train['label'].map(class_weight_dict).values
 
     #xgb1.fit(X_train, y_train,sample_weight=class_weight_scale)
-    xgb1.fit(X_train, y_train)
+    xgb1.fit(X_train, y_train,sample_weight=sample_weight)
     
     # Predict probabilities for all classes (shape: [n_valid, n_classes])
     xgb1_pred_prob = xgb1.predict_proba(X_valid)
@@ -279,7 +293,7 @@ def objective(trial):
         'random_state': 42,
         'objective': 'multi:softprob',  # or 'multi:softprob' for probability output
         'num_class': num_class,
-        'nthread': 10,
+        'nthread': 20,
         'seed': 1,
         'device': 'cuda'
     }
@@ -320,8 +334,13 @@ def objective(trial):
         if isinstance(y_train, pd.Series):
             y_train = y_train.to_frame(name="label")
 
+         # compute class weights
+        classes = np.unique(y_train['label'])
+        class_weights = compute_class_weight(class_weight='balanced',classes=classes,y=y_train['label'])
+        class_weight_dict = dict(zip(classes, class_weights))
+        sample_weight = y_train['label'].map(class_weight_dict).values
         #train
-        model.fit(X_train, y_train)
+        model.fit(X_train, y_train,sample_weight=sample_weight)
 
         #predict and scoore
         y_pred = model.predict_proba(X_test)
@@ -333,13 +352,13 @@ def objective(trial):
 
 import optuna
 study = optuna.create_study(direction='maximize')
-study.optimize(objective, n_trials=20)
+study.optimize(objective, n_trials=100)
 
 # Best parameters and best score
 print("Best params:", study.best_params)
 print("Best AUC:", study.best_value)
 
-X_train_sm, y_train_sm = smote.fit_resample(x_df, y_df)
+#X_train_sm, y_train_sm = smote.fit_resample(x_df, y_df)
 # Train final optimized model
 
 
@@ -374,9 +393,13 @@ for train_indices, test_indices in skf.split(x_df, y_df['label']):
     X_train,y_train=undersample_oversampling_xgobost(X_train_all,y_train_all)
     # Train the model
     
-
+    # compute class weights
+    classes = np.unique(y_train['label'])
+    class_weights = compute_class_weight(class_weight='balanced',classes=classes,y=y_train['label'])
+    class_weight_dict = dict(zip(classes, class_weights))
+    sample_weight = y_train['label'].map(class_weight_dict).values
     
-    xgb_opt.fit(X_train,y_train)
+    xgb_opt.fit(X_train,y_train,sample_weight=sample_weight)
     # Predict probabilities for all classes (shape: [n_valid, n_classes])
     
     xgb_opt_pred_prob = xgb_opt.predict_proba(X_valid)
@@ -520,72 +543,29 @@ test_data = confusion_matrix(y_val.label,xgb_opt.predict(X_val),normalize="pred"
 import seaborn as sms
 #print(training_data)
 #training_data = np.diag(training_data)
-#plt.figure(figsize=(12, 8))
-
-# Create the plot area
-fig, ax = plt.subplots(figsize=(14, 12))  # Bigger plot = better label space
-
-# Create the heatmap ON THE AXES
-sns.heatmap(
-    test_data,
-    annot=True,
-    fmt='.1f',
-    cmap='Blues',
-    xticklabels=sorted_labels,
-    yticklabels=sorted_labels,
-    ax=ax  # ✅ attach to the right axes!
-)
-
-
-
-# Fix x/y tick labels
-# Set axis labels and ticks
-ax.set_xlabel('Predicted Label', fontsize=12)
-ax.set_ylabel('True Label', fontsize=12)
-ax.set_title('Confusion Matrix Test Data', fontsize=14)
-
-
-# Rotate x-axis labels to avoid overlap
-ax.tick_params(axis='x', rotation=45)
-ax.tick_params(axis='y', rotation=0)
-
-# Save and show the plot
-plt.tight_layout()  # ✅ Prevent label clipping
-plt.savefig(os.path.join(figure_path, "tcm_diag_smot.png"))
+plt.figure(figsize=(12, 8))
+sms.heatmap(test_data, annot=True, fmt='.1f', cmap='Blues', xticklabels=sorted_labels, yticklabels=sorted_labels)
+plt.xlabel('Predicted Label')
+plt.ylabel('True Label')
+plt.xticks(rotation=45, ha='right')
+plt.title('Confusion Matrix tesetdata')
+plt.savefig(os.path.join(figure_path,"tcm_diag_smot.png"))
 plt.show()
+
 
 for k, v in tranlate_dic.items():
     print(f"{k}: {v}")
 
 
-# Extract class labels in the correct order
 labels_ordered = [tranlate_dic[str(i)] for i in range(len(tranlate_dic))]
-
-# Extract diagonal values (correct predictions)
 diagonal = np.diag(test_data)
-
-# Set figure size and create the plot
-fig, ax = plt.subplots(figsize=(14, 8))  # Larger width for better spacing
-
-# Plot the bars
-ax.bar(range(len(labels_ordered)), diagonal, color='skyblue', edgecolor='black')
-
-# Axis labels and title
-ax.set_xlabel('Class', fontsize=12)
-ax.set_ylabel('Correct Predictions', fontsize=12)
-ax.set_title('Correct Predictions per Class (Diagonal of Confusion Matrix)', fontsize=14)
-
-# Improve tick labels
-ax.set_xticks(range(len(labels_ordered)))
-ax.set_xticklabels(labels_ordered, rotation=45, ha='right', fontsize=10)
-
-# Add value labels on top of bars (optional)
-for i, val in enumerate(diagonal):
-    ax.text(i, val + max(diagonal) * 0.01, str(int(val)), ha='center', va='bottom', fontsize=8)
-
-# Layout and save
+plt.bar(range(len(tranlate_dic)), diagonal)
+plt.figure(figsize=(12, 8))
+plt.xlabel('Class')
+plt.ylabel('Correct predictions')
+plt.xticks(ticks=range(len(labels_ordered)), labels=labels_ordered, rotation=45)
 plt.tight_layout()
-plt.savefig(os.path.join(figure_path, "terst_bar_diag_smot.png"))
+plt.savefig(os.path.join(figure_path,"terst_bar_diag_smot.png"))
 plt.show()
 
 import graphviz as gv

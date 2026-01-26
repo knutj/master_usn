@@ -39,15 +39,15 @@ os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
-figure_path=os.path.join(os.getcwd(), 'figures','cnn_lsm_ret')
+figure_path=os.path.join(os.getcwd(), 'figures','cnn_lsm_retv2')
 if not os.path.exists(figure_path):
     os.makedirs(figure_path)
 
-model_path=os.path.join(os.getcwd(), 'models', 'cnn_lsm_ret')
+model_path=os.path.join(os.getcwd(), 'models', 'cnn_lsm_retv2')
 if not os.path.exists(model_path):
     os.makedirs(model_path)
 
-data_path=os.path.join(os.getcwd(), 'data', 'cnn_lsm_ret')
+data_path=os.path.join(os.getcwd(), 'data', 'cnn_lsm_retv2')
 if not os.path.exists(data_path):
     os.makedirs(data_path)
 from dataclass import *
@@ -55,7 +55,7 @@ from oversample import *
 from prosess_data import *
 from helper import *
 from data_import import * 
-from model import *
+from ml import *
 #%%
 # --- Step 1: Load the Data ---
 df = pd.read_csv("data/cleaned_data.csv.gz")

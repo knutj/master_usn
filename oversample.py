@@ -692,7 +692,7 @@ from collections import Counter
 from imblearn.under_sampling import RandomUnderSampler
 from imblearn.over_sampling import SMOTE
 
-def undersample_oversampling_xgobost(X, y, random_state=42):
+def undersample_oversampling_xgobost(X, y, random_state=42,use_smote=True,use_random=False):
     """
     Undersample classes above the mean, and oversample those below.
     Only operate on classes present in the current dataset.
@@ -705,12 +705,17 @@ def undersample_oversampling_xgobost(X, y, random_state=42):
 
     # --- Safe undersampling ---
     under_strategy = {
-        cls: min(mean_class_size, count)
-        for cls, count in class_counts.items()
+    cls: mean_class_size
+    for cls, count in class_counts.items()
+    if count > mean_class_size
     }
-
-    rus = RandomUnderSampler(sampling_strategy=under_strategy, random_state=random_state)
-    X_under, y_under = rus.fit_resample(X, y)
+   
+    if use_random==True:
+        rus = RandomUnderSampler(sampling_strategy=under_strategy, random_state=random_state)
+        X_under, y_under = rus.fit_resample(X, y)
+    else:
+        X_under = X
+        y_under = y
 
     # Restore to pandas
     if isinstance(X, pd.DataFrame):
@@ -725,7 +730,7 @@ def undersample_oversampling_xgobost(X, y, random_state=42):
         if count < mean_class_size
     }
 
-    if over_strategy:
+    if over_strategy and use_smote==True:
         smote = SMOTE(sampling_strategy=over_strategy, random_state=random_state)
         X_bal, y_bal = smote.fit_resample(X_under, y_under)
 
