@@ -76,14 +76,14 @@ process = psutil.Process(os.getpid())
 memory_info = process.memory_info()
 print(f"Current memory usage: {memory_info.rss / (1024 * 1024):.2f} MB")
 
-df,tranlate_dic=startimportdata(df,figure_path,model_path,data_path,"cnn_lstm",30000)
+df,tranlate_dic=startimportdata(df,figure_path,model_path,data_path,"cnn_lstm",3000)
 number_class = np.unique(df["label"])
     # %%
 
 
 admission_counts = df['id'].value_counts().sort_index()
 admission_stats = admission_counts.describe()
-print(admission_stats)
+#print(admission_stats)
 
 import matplotlib.pyplot as plt
 
@@ -243,8 +243,10 @@ def objective(trial):
         for cls, count in counts.items():
             print(f"  Class {cls}: {count} samples")
         # ---- Oversample ----
-        X_train, y_train, len_train = balance_sequences_hybrid_tsmote(X_train, y_train, len_train)
-
+        try:
+            X_train, y_train, len_train = balance_sequences_hybrid_tsmote(X_train, y_train, len_train)
+        except:
+            print("error oversampling failed")
         new_counts = Counter(y_train)
 
         print(" oversample  Sample:")
@@ -542,7 +544,10 @@ for fold, (train_index, val_index) in enumerate(skf.split(X_train_all, y_train_a
     for cls, count in new_counts.items():
         print(f"  Class {cls}: {count} samples")
     # ---- Oversample ----
-    X_train, y_train, len_train = balance_sequences_hybrid_tsmote(X_train, y_train, len_train)
+    try:
+        X_train, y_train, len_train = balance_sequences_hybrid_tsmote(X_train, y_train, len_train)
+    except:
+        print("did not succed")
     if optimizer_name == "Adam":
         optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     elif optimizer_name == "RMSprop":

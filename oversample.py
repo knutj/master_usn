@@ -1,5 +1,5 @@
 import os
-
+import math 
 from optuna.logging import set_verbosity, WARNING
 import dask.dataframe as dd
 #os.system('cls' if os.name == 'nt' else 'clear')
@@ -515,163 +515,209 @@ def balance_sequences_hybrid_tsmote(
     random_state=None,
     device=None,
     max_samples=40000,
-    plot_distributions=False
+    plot_distributions=False,
+    undersampling=False
 ):
     """
     Hybrid balancing for time series data:
     1. Random undersampling for large classes
     2. T-SMOTE oversampling for small classes
-
-    Returns:
-        X_bal, y_bal, lengths_bal
     """
+
     if random_state is not None:
         np.random.seed(random_state)
         torch.manual_seed(random_state)
 
     device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # ==== Plot original distribution ====
+    # ============================================================
+    # Original distribution
+    # ============================================================
+
     class_counts = Counter(y)
-    classes = sorted(class_counts.keys())
     print(f"📊 Original class counts: {class_counts}")
+
     if plot_distributions:
-        _plot_class_distribution(class_counts, title="Before Balancing")
+        _plot_class_distribution(class_counts, "Before Balancing")
 
     mean_class_size = np.mean(list(class_counts.values()))
     undersampled_classes = set()
 
-    if undersample_target is None:
-        undersample_target = int(np.median(list(class_counts.values())))
+    # ============================================================
+    # Step 1 — Undersampling
+    # ============================================================
 
-    X_under, y_under, lengths_under = [], [], []
+    if undersampling:
 
-    # Step 1: Random undersampling for classes above mean
-    for cls in classes:
-        X_cls = X[y == cls]
-        lengths_cls = lengths[y == cls]
-        count = len(X_cls)
+        if undersample_target is None:
+            undersample_target = int(np.median(list(class_counts.values())))
 
-        if isinstance(undersample_target, float) and 0 < undersample_target < 1:
-            n_keep = int(count * undersample_target)
-        elif isinstance(undersample_target, int) and undersample_target >= 1:
-            n_keep = undersample_target
-        else:
-            raise ValueError("undersample_target must be a float in (0,1) or an integer ≥ 1")
+        X_under, y_under, lengths_under = [], [], []
 
-        if count > n_keep and count > mean_class_size:
-            print(f"⚠️ Undersampling class {cls} from {count} → {n_keep}")
-            keep_idx = np.random.choice(count, n_keep, replace=False)
-            X_cls = X_cls[keep_idx]
-            lengths_cls = lengths_cls[keep_idx]
-            undersampled_classes.add(cls)
-        else:
-            print(f"📏 Keeping all {count} samples for class {cls}")
+        for cls in sorted(class_counts.keys()):
+            X_cls = X[y == cls]
+            lengths_cls = lengths[y == cls]
+            count = len(X_cls)
 
-        y_cls = np.full(len(X_cls), cls)
-        X_under.append(X_cls)
-        y_under.append(y_cls)
-        lengths_under.append(lengths_cls)
+            if isinstance(undersample_target, float):
+                n_keep = math.ceil(count * undersample_target)
+            else:
+                n_keep = undersample_target
 
-    X_under = np.concatenate(X_under, axis=0)
-    y_under = np.concatenate(y_under, axis=0)
-    lengths_under = np.concatenate(lengths_under, axis=0)
+            if count > n_keep and count > mean_class_size:
+                print(f"⚠️ Undersampling class {cls}: {count} → {n_keep}")
+                idx = np.random.choice(count, n_keep, replace=False)
+                X_cls = X_cls[idx]
+                lengths_cls = lengths_cls[idx]
+                undersampled_classes.add(cls)
+            else:
+                print(f"📏 Keeping all {count} samples for class {cls}")
 
-    print(f"✅ After undersampling: {Counter(y_under)}")
+            X_under.append(X_cls)
+            y_under.append(np.full(len(X_cls), cls))
+            lengths_under.append(lengths_cls)
 
-    # Step 2: T-SMOTE oversampling for minority classes
-    class_counts_under = Counter(y_under)
-    max_class_count = max(class_counts_under.values())
+        X_under = np.concatenate(X_under)
+        y_under = np.concatenate(y_under)
+        lengths_under = np.concatenate(lengths_under)
 
-    
+        print(f"✅ After undersampling: {Counter(y_under)}")
+
+        source_X, source_y, source_lengths = X_under, y_under, lengths_under
+
+    else:
+        source_X, source_y, source_lengths = X, y, lengths
+
+    # ============================================================
+    # Step 2 — Oversampling (T-SMOTE)
+    # ============================================================
+
+    class_counts = Counter(source_y)
+    classes = sorted(class_counts.keys())
+
+    X_list = [source_X]
+    y_list = [source_y]
+    lengths_list = [source_lengths]
+
+    max_class_count = max(class_counts.values())
 
     if oversample_target is None:
-        oversample_target = int(max_class_count*0.5)
-    elif isinstance(oversample_target, float) and 0 < oversample_target < 1:
+        oversample_target = int(max_class_count * 0.5)
+    elif isinstance(oversample_target, float):
         oversample_target = int(max_class_count * oversample_target)
-    elif isinstance(oversample_target, int) and oversample_target >= 1:
-        pass
-    else:
-        raise ValueError("oversample_target must be a float in (0,1), int ≥ 1, or None")
-
-   
-    X_list, y_list, lengths_list = [X_under], [y_under], [lengths_under]
 
     for cls in classes:
+
         if cls in undersampled_classes:
             print(f"⏭️ Skipping oversampling for class {cls} (was undersampled)")
             continue
 
-        
-
-        X_cls = X_under[y_under == cls]
+        X_cls = source_X[source_y == cls]
         n_samples, seq_len, n_features = X_cls.shape
-        count = n_samples
 
-        if count >= oversample_target * 0.85:
-            print(f"⚠️ Skipping oversampling for class {cls}: already close to target")
+        if n_samples >= oversample_target * 0.85:
+            print(f"⚠️ Skipping class {cls} (already near target)")
             continue
 
-        if count > max_samples:
-            print(f"⚠️ Downsampling class {cls} to {max_samples} before SMOTE")
-            keep_idx = np.random.choice(count, max_samples, replace=False)
-            X_cls = X_cls[keep_idx]
+        if n_samples < 2:
+            print(f"⚠️ Class {cls} has only 1 sample → skipping SMOTE")
+            continue
+
+        if n_samples > max_samples:
+            idx = np.random.choice(n_samples, max_samples, replace=False)
+            X_cls = X_cls[idx]
             n_samples = len(X_cls)
 
-        if count < oversample_target:
-            n_to_sample = oversample_target - count
-            print(f"🧠 Oversampling class {cls}: +{n_to_sample} (using T-SMOTE)")
+        n_to_sample = oversample_target - n_samples
+        print(f"🧠 Oversampling class {cls}: +{n_to_sample}")
 
-            X_flat = X_cls.reshape(n_samples, -1)
-            nn = NearestNeighbors(n_neighbors=min(k_neighbors, n_samples))
-            nn.fit(X_flat)
+        X_flat = X_cls.reshape(n_samples, -1)
+        nn = NearestNeighbors(n_neighbors=min(k_neighbors, n_samples),algorithm='auto')
+        nn.fit(X_flat)
+        '''
+        synthetic = []
 
-            synthetic_samples = []
-            for _ in range(n_to_sample):
-                i = np.random.randint(0, n_samples)
-                x_i = X_cls[i]
-                _, indices = nn.kneighbors(X_flat[i].reshape(1, -1))
-                j = np.random.choice(indices[0][1:])
-                x_j = X_cls[j]
+        for _ in range(n_to_sample):
+            i = np.random.randint(0, n_samples)
+            _, neigh = nn.kneighbors(X_flat[i].reshape(1, -1))
+            neigh = neigh[0]
 
-                x_i_t = torch.tensor(x_i, dtype=torch.float32, device=device)
-                x_j_t = torch.tensor(x_j, dtype=torch.float32, device=device)
+            if len(neigh) < 2:
+                j = i
+            else:
+                j = np.random.choice(neigh[1:])
 
-                alpha = torch.rand(1, device=device)
-                x_syn = alpha * x_i_t + (1 - alpha) * x_j_t
-                temporal_noise = torch.randn_like(x_syn) * 0.01
-                x_syn = x_syn + temporal_noise
+            xi = torch.tensor(X_cls[i], device=device)
+            xj = torch.tensor(X_cls[j], device=device)
 
-                synthetic_samples.append(x_syn.cpu().numpy())
+            alpha = torch.rand(1, device=device)
+            xsyn = alpha * xi + (1 - alpha) * xj
+            xsyn += torch.randn_like(xsyn) * 0.01
 
-            synthetic_samples = np.array(synthetic_samples)
-            synthetic_labels = np.full(len(synthetic_samples), cls)
-            synthetic_lengths = np.full(len(synthetic_samples), seq_len)
+            synthetic.append(xsyn.cpu().numpy())
+        
+        synthetic = np.array(synthetic)
+        '''
 
-            X_list.append(synthetic_samples)
-            y_list.append(synthetic_labels)
-            lengths_list.append(synthetic_lengths)
+        # -------------------------------------------------------
+        # Vectorized T-SMOTE
+        # -------------------------------------------------------
 
-        torch.cuda.empty_cache()
+        # Pick base indices
+        base_idx = np.random.randint(0, n_samples, size=n_to_sample)
 
-    # Combine and shuffle
-    X_bal = np.concatenate(X_list, axis=0)
-    y_bal = np.concatenate(y_list, axis=0)
-    lengths_bal = np.concatenate(lengths_list, axis=0)
+        # Find neighbors for all base points
+        _, neigh_idx = nn.kneighbors(X_flat[base_idx])
+
+        # Choose random neighbor (excluding itself)
+        rand_pos = np.random.randint(1, neigh_idx.shape[1], size=n_to_sample)
+        neighbor_idx = neigh_idx[np.arange(n_to_sample), rand_pos]
+
+        # Convert to torch tensors
+        xi = torch.tensor(X_cls[base_idx], dtype=torch.float32, device=device)
+        xj = torch.tensor(X_cls[neighbor_idx], dtype=torch.float32, device=device)
+
+        # Random interpolation factors
+        alpha = torch.rand(n_to_sample, 1, 1, device=device)
+
+        # Interpolate
+        xsyn = alpha * xi + (1 - alpha) * xj
+
+        # Temporal noise
+        xsyn += torch.randn_like(xsyn) * 0.01
+
+        synthetic = xsyn.cpu().numpy()
+
+        
+
+        X_list.append(synthetic)
+        y_list.append(np.full(len(synthetic), cls))
+        lengths_list.append(np.full(len(synthetic), seq_len))
+
+    torch.cuda.empty_cache()
+
+    # ============================================================
+    # Combine & shuffle
+    # ============================================================
+
+    X_bal = np.concatenate(X_list)
+    y_bal = np.concatenate(y_list)
+    lengths_bal = np.concatenate(lengths_list)
 
     if shuffle:
-        indices = np.arange(len(y_bal))
-        np.random.shuffle(indices)
-        X_bal = X_bal[indices]
-        y_bal = y_bal[indices]
-        lengths_bal = lengths_bal[indices]
+        idx = np.random.permutation(len(y_bal))
+        X_bal = X_bal[idx]
+        y_bal = y_bal[idx]
+        lengths_bal = lengths_bal[idx]
 
     final_counts = Counter(y_bal)
     print(f"🏁 Final class distribution: {final_counts}")
+
     if plot_distributions:
-        _plot_class_distribution(final_counts, title="After Balancing")
+        _plot_class_distribution(final_counts, "After Balancing")
 
     return X_bal, y_bal, lengths_bal
+
 
 
 # Helper function
